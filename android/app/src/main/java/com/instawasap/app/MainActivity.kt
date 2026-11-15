@@ -30,6 +30,9 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.slider.Slider
 import com.google.android.material.textfield.TextInputEditText
+import com.instawasap.comun.Compartir
+import com.instawasap.comun.Procesar
+import com.instawasap.comun.Sticker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -286,7 +289,7 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 val st = withContext(Dispatchers.IO) {
-                    Motor.hacerSticker(applicationContext, v.archivo, sliderInicio.value, sliderDur.value, completo)
+                    Procesar.hacerSticker(applicationContext, v.archivo, sliderInicio.value, sliderDur.value, completo)
                 }
                 sticker = st
                 mostrarSticker(st)

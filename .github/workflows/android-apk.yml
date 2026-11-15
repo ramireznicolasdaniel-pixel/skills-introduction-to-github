@@ -1,4 +1,4 @@
-name: Compilar APK de InstaWasap
+name: Compilar APKs (InstaWasap y VideoIA)
 
 on:
   push:
@@ -29,21 +29,27 @@ jobs:
         run: ./gradlew --no-daemon testReleaseUnitTest
 
       - name: Compilar APK
-        run: ./gradlew --no-daemon assembleRelease
+        run: ./gradlew --no-daemon :app:assembleRelease :videoia:assembleRelease
 
       - name: Renombrar
         run: |
-          mkdir -p salida
+          mkdir -p salida salida-ia
           for f in app/build/outputs/apk/release/*.apk; do
             abi=$(basename "$f" | sed -E 's/app-(.*)-release\.apk/\1/')
             cp "$f" "salida/InstaWasap-$abi.apk"
           done
-          ls -la salida
+          for f in videoia/build/outputs/apk/release/*.apk; do
+            abi=$(basename "$f" | sed -E 's/videoia-(.*)-release\.apk/\1/')
+            cp "$f" "salida-ia/VideoIA-$abi.apk"
+          done
+          ls -la salida salida-ia
 
       - uses: actions/upload-artifact@v4
         with:
           name: InstaWasap-apk
-          path: android/salida/*.apk
+          path: |
+            android/salida/*.apk
+            android/salida-ia/*.apk
 
       - name: Publicar en Releases (link fijo para descargar desde el celular)
         uses: softprops/action-gh-release@v2
@@ -57,3 +63,18 @@ jobs:
 
             Versión ${{ github.run_number }} — commit ${{ github.sha }}
           files: android/salida/*.apk
+
+      - name: Publicar VideoIA en Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: videoia-ultima
+          name: VideoIA (última versión)
+          make_latest: false
+          body: |
+            App para crear videos con IA (Google Veo) y mandarlos por WhatsApp o hacerlos sticker animado.
+            **¿Cuál bajo?** `VideoIA-arm64-v8a.apk` sirve para casi todos los celulares actuales.
+            Si no instala, probá `VideoIA-armeabi-v7a.apk` (celulares viejos).
+            Necesitás una clave de Google AI Studio con facturación activada (los videos con IA tienen costo).
+
+            Versión ${{ github.run_number }} — commit ${{ github.sha }}
+          files: android/salida-ia/*.apk

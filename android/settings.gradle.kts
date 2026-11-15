@@ -6,4 +6,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "InstaWasap"
-include(":app")
+include(":app", ":comun", ":videoia")

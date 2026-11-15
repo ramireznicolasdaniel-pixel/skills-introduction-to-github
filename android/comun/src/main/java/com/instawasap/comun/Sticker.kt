@@ -1,4 +1,4 @@
-package com.instawasap.app
+package com.instawasap.comun
 
 import java.io.File
 import java.nio.ByteBuffer

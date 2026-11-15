@@ -1,4 +1,4 @@
-package com.instawasap.app
+package com.instawasap.comun
 
 import android.content.ActivityNotFoundException
 import android.content.ContentValues
