@@ -40,6 +40,18 @@ class GeminiTest {
         assertFalse(Gemini.cuerpo("x", "16:9", "", conParametros = false).has("parameters"))
     }
 
+    @Test fun imagenEnLosDosFormatos() {
+        val img = Gemini.Imagen("QUJD", "image/jpeg")
+        val f0 = Gemini.cuerpo("", "9:16", "", true, img, 0).getJSONArray("instances").getJSONObject(0)
+        assertEquals(Gemini.IDEA_POR_DEFECTO, f0.getString("prompt")) // sin idea usa una por defecto
+        assertEquals("QUJD", f0.getJSONObject("image").getJSONObject("inlineData").getString("data"))
+        assertEquals("image/jpeg", f0.getJSONObject("image").getJSONObject("inlineData").getString("mimeType"))
+        val f1 = Gemini.cuerpo("que vuele", "9:16", "", true, img, 1).getJSONArray("instances").getJSONObject(0)
+        assertEquals("que vuele", f1.getString("prompt"))
+        assertEquals("QUJD", f1.getJSONObject("image").getString("bytesBase64Encoded"))
+        assertFalse(Gemini.cuerpo("x", "9:16", "", true).getJSONArray("instances").getJSONObject(0).has("image"))
+    }
+
     @Test fun enProceso() {
         assertFalse(Gemini.parsearEstado("""{"name": "models/veo/operations/abc"}""").terminado)
         assertFalse(Gemini.parsearEstado("""{"name": "x", "done": false}""").terminado)

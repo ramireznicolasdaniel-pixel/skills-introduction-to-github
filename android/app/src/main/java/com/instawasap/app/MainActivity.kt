@@ -31,6 +31,7 @@ import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.slider.Slider
 import com.google.android.material.textfield.TextInputEditText
 import com.instawasap.comun.Compartir
+import com.instawasap.comun.Editores
 import com.instawasap.comun.Procesar
 import com.instawasap.comun.Sticker
 import kotlinx.coroutines.Dispatchers
@@ -138,6 +139,9 @@ class MainActivity : AppCompatActivity() {
             actual?.let { Compartir.conOtraApp(this, it.archivo, "video/mp4") }
         }
         btnAchicar.setOnClickListener { achicar() }
+        findViewById<MaterialButton>(R.id.btnEditar).setOnClickListener {
+            actual?.let { Editores.elegir(this, it.archivo) }
+        }
 
         sliderInicio.addOnChangeListener { _, valor, deUsuario ->
             txtInicio.text = String.format(Locale.US, "Desde el segundo: %.1f", valor)

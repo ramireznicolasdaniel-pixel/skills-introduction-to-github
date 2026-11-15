@@ -56,6 +56,55 @@ object Procesar {
             listOf("-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", archivo.absolutePath),
         ).trim().lines().first().toDouble()
 
+    /** Ancho y alto del primer stream de video. */
+    fun dimensiones(ctx: Context, archivo: File): Pair<Int, Int> {
+        val t = ejecutar(
+            ctx, "libffprobe.so",
+            listOf("-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
+                "-of", "csv=s=x:p=0", archivo.absolutePath),
+        ).trim().lines().first()
+        val (w, h) = t.split("x").map { it.trim().toInt() }
+        return w to h
+    }
+
+    fun tieneAudio(ctx: Context, archivo: File): Boolean =
+        ejecutar(
+            ctx, "libffprobe.so",
+            listOf("-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", archivo.absolutePath),
+        ).isNotBlank()
+
+    /**
+     * Une [primero] (cortado hasta [hastaSeg]) con [segundo], uno detrás del otro.
+     * El primero se adapta al tamaño del segundo (con bordes si hace falta); si alguno no tiene audio, se le pone silencio.
+     */
+    fun unir(ctx: Context, primero: File, hastaSeg: Double, segundo: File): File {
+        val (w, h) = dimensiones(ctx, segundo)
+        val durPrimero = minOf(hastaSeg, duracion(ctx, primero)).coerceAtLeast(0.1)
+        val durSegundo = duracion(ctx, segundo)
+        val args = mutableListOf("-t", "%.2f".format(Locale.US, durPrimero), "-i", primero.absolutePath, "-i", segundo.absolutePath)
+        var entradas = 2
+        fun audio(indice: Int, archivo: File, dur: Double, etiqueta: String): String {
+            val fuente = if (tieneAudio(ctx, archivo)) {
+                "[$indice:a]"
+            } else {
+                args += listOf("-f", "lavfi", "-t", "%.2f".format(Locale.US, dur), "-i", "anullsrc=r=44100:cl=stereo")
+                "[${entradas++}:a]"
+            }
+            return "${fuente}aresample=44100,aformat=channel_layouts=stereo[$etiqueta]"
+        }
+        val a0 = audio(0, primero, durPrimero, "a0")
+        val a1 = audio(1, segundo, durSegundo, "a1")
+        val ajuste = "scale=$w:$h:force_original_aspect_ratio=decrease,pad=$w:$h:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p"
+        val filtro = "[0:v]$ajuste[v0];[1:v]$ajuste[v1];$a0;$a1;[v0][a0][v1][a1]concat=n=2:v=1:a=1[v][a]"
+        val destino = File(carpeta(ctx), nuevoId() + ".mp4")
+        ffmpeg(
+            ctx, *args.toTypedArray(), "-filter_complex", filtro, "-map", "[v]", "-map", "[a]",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-b:a", "128k",
+            "-movflags", "+faststart", destino.absolutePath,
+        )
+        return destino
+    }
+
     /** Recomprime para que pese menos de 15 MB y WhatsApp lo acepte. */
     fun comprimir(ctx: Context, origen: File): File {
         val kbps = bitrateParaPeso(duracion(ctx, origen))

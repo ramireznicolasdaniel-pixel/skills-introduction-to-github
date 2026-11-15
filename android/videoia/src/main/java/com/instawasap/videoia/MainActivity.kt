@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.graphics.drawable.AnimatedImageDrawable
@@ -19,6 +20,8 @@ import android.widget.MediaController
 import android.widget.TextView
 import android.widget.Toast
 import android.widget.VideoView
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -30,6 +33,7 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.card.MaterialCardView
+import com.google.android.material.checkbox.MaterialCheckBox
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -38,6 +42,7 @@ import com.google.android.material.slider.Slider
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputEditText
 import com.instawasap.comun.Compartir
+import com.instawasap.comun.Editores
 import com.instawasap.comun.Procesar
 import com.instawasap.comun.Sticker
 import kotlinx.coroutines.Dispatchers
@@ -68,6 +73,25 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnCancelar: MaterialButton
     private lateinit var progreso: LinearProgressIndicator
     private lateinit var estado: TextView
+
+    // Punto de partida (imagen o video)
+    private lateinit var grupoPartida: MaterialButtonToggleGroup
+    private lateinit var partidaImagen: View
+    private lateinit var partidaVideo: View
+    private lateinit var imgPartida: ImageView
+    private lateinit var sliderCuadro: Slider
+    private lateinit var txtCuadro: TextView
+    private lateinit var chkUnir: MaterialCheckBox
+    private var imagenPartida: Bitmap? = null
+    private var videoPartida: File? = null
+    private var cuadroPartida: Bitmap? = null
+
+    private val elegirImagen = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri?.let { usarImagen(it) }
+    }
+    private val elegirVideo = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri?.let { usarVideo(it) }
+    }
 
     // Resultado
     private lateinit var cardVideo: MaterialCardView
@@ -122,6 +146,13 @@ class MainActivity : AppCompatActivity() {
         btnCancelar = findViewById(R.id.btnCancelar)
         progreso = findViewById(R.id.progreso)
         estado = findViewById(R.id.estado)
+        grupoPartida = findViewById(R.id.grupoPartida)
+        partidaImagen = findViewById(R.id.partidaImagen)
+        partidaVideo = findViewById(R.id.partidaVideo)
+        imgPartida = findViewById(R.id.imgPartida)
+        sliderCuadro = findViewById(R.id.sliderCuadro)
+        txtCuadro = findViewById(R.id.txtCuadro)
+        chkUnir = findViewById(R.id.chkUnir)
         cardVideo = findViewById(R.id.cardVideo)
         video = findViewById(R.id.video)
         meta = findViewById(R.id.meta)
@@ -163,6 +194,23 @@ class MainActivity : AppCompatActivity() {
             (v as Chip).setOnClickListener { idea.setText(v.text); idea.setSelection(v.text.length) }
         }
         btnGenerar.setOnClickListener { generar() }
+        grupoPartida.addOnButtonCheckedListener { _, _, _ -> mostrarPartida() }
+        findViewById<MaterialButton>(R.id.btnElegirImagen).setOnClickListener {
+            elegirImagen.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+        }
+        findViewById<MaterialButton>(R.id.btnElegirVideo).setOnClickListener {
+            elegirVideo.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
+        }
+        sliderCuadro.addOnChangeListener { _, valor, _ ->
+            txtCuadro.text = String.format(Locale.US, "La IA sigue desde el segundo: %.1f", valor)
+        }
+        sliderCuadro.addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
+            override fun onStartTrackingTouch(slider: Slider) {}
+            override fun onStopTrackingTouch(slider: Slider) = actualizarCuadro()
+        })
+        findViewById<MaterialButton>(R.id.btnEditar).setOnClickListener {
+            actual?.let { f -> Editores.elegir(this, f) }
+        }
         btnCancelar.setOnClickListener { cancelar() }
 
         findViewById<MaterialButton>(R.id.btnWhatsApp).setOnClickListener { actual?.let { mandar(it, "video/mp4") } }
@@ -188,11 +236,92 @@ class MainActivity : AppCompatActivity() {
         findViewById<MaterialButton>(R.id.btnStickerGuardar).setOnClickListener { sticker?.let { guardar(it, "image/webp", null) } }
     }
 
-    /** Texto compartido desde otra app: se usa como idea. */
+    /** Algo compartido desde otra app: texto = idea; imagen o video = punto de partida. */
     private fun recibirTexto(intent: Intent?) {
         if (intent?.action != Intent.ACTION_SEND) return
-        intent.getStringExtra(Intent.EXTRA_TEXT)?.let { idea.setText(it.trim()) }
+        val tipo = intent.type.orEmpty()
+        @Suppress("DEPRECATION")
+        val uri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+        when {
+            uri != null && tipo.startsWith("image/") -> usarImagen(uri)
+            uri != null && tipo.startsWith("video/") -> usarVideo(uri)
+            else -> intent.getStringExtra(Intent.EXTRA_TEXT)?.let { idea.setText(it.trim()) }
+        }
         intent.action = null
+    }
+
+    // ---------- Punto de partida ----------
+
+    private fun modoPartida() = when (grupoPartida.checkedButtonId) {
+        R.id.btnDesdeImagen -> "imagen"
+        R.id.btnDesdeVideo -> "video"
+        else -> "texto"
+    }
+
+    private fun mostrarPartida() {
+        val modo = modoPartida()
+        partidaImagen.visibility = if (modo == "imagen") View.VISIBLE else View.GONE
+        partidaVideo.visibility = if (modo == "video") View.VISIBLE else View.GONE
+        val bmp = when (modo) {
+            "imagen" -> imagenPartida
+            "video" -> cuadroPartida
+            else -> null
+        }
+        imgPartida.setImageBitmap(bmp)
+        imgPartida.visibility = if (bmp != null) View.VISIBLE else View.GONE
+    }
+
+    private fun sugerirFormato(bmp: Bitmap) {
+        grupoFormato.check(if (Partida.esHorizontal(bmp)) R.id.btnHorizontal else R.id.btnVertical)
+    }
+
+    private fun usarImagen(uri: Uri) {
+        grupoPartida.check(R.id.btnDesdeImagen)
+        lifecycleScope.launch {
+            try {
+                val bmp = withContext(Dispatchers.IO) { Partida.leerImagen(applicationContext, uri) }
+                imagenPartida = bmp
+                sugerirFormato(bmp)
+                mostrarPartida()
+                estado.text = "Imagen lista. Contá qué querés que pase (opcional) y tocá Generar."
+            } catch (e: Exception) {
+                estado.text = "No se pudo abrir la imagen: ${e.message}"
+            }
+        }
+    }
+
+    private fun usarVideo(uri: Uri) {
+        grupoPartida.check(R.id.btnDesdeVideo)
+        estado.text = "Abriendo el video…"
+        lifecycleScope.launch {
+            try {
+                val f = withContext(Dispatchers.IO) { Partida.copiar(applicationContext, uri, "mp4") }
+                val dur = withContext(Dispatchers.IO) { Partida.duracionSeg(f) }
+                videoPartida = f
+                sliderCuadro.value = 0f
+                sliderCuadro.valueTo = maxOf(dur, 0.1f)
+                sliderCuadro.value = maxOf(dur - 0.05f, 0f) // por defecto: el final, para continuarlo
+                actualizarCuadro()
+                estado.text = "Video listo. Elegí desde qué segundo sigue la IA (por defecto, el final)."
+            } catch (e: Exception) {
+                estado.text = "No se pudo abrir el video: ${e.message}"
+            }
+        }
+    }
+
+    private fun actualizarCuadro() {
+        val f = videoPartida ?: return
+        val seg = sliderCuadro.value
+        lifecycleScope.launch {
+            try {
+                val bmp = withContext(Dispatchers.IO) { Partida.cuadro(f, seg) }
+                cuadroPartida = bmp
+                sugerirFormato(bmp)
+                mostrarPartida()
+            } catch (e: Exception) {
+                estado.text = e.message
+            }
+        }
     }
 
     // ---------- Configuración ----------
@@ -275,17 +404,32 @@ class MainActivity : AppCompatActivity() {
                 estado.text = "Primero configurá tu clave de API."
                 return
             }
-            texto.length < 5 -> { estado.text = "Escribí qué video querés (cuanto más detalle, mejor)."; return }
+            modoPartida() == "texto" && texto.length < 5 -> {
+                estado.text = "Escribí qué video querés (cuanto más detalle, mejor)."; return
+            }
+            modoPartida() == "imagen" && imagenPartida == null -> { estado.text = "Elegí una imagen primero."; return }
+            modoPartida() == "video" && cuadroPartida == null -> { estado.text = "Elegí un video primero."; return }
         }
+        val bmpPartida = when (modoPartida()) {
+            "imagen" -> imagenPartida
+            "video" -> cuadroPartida
+            else -> null
+        }
+        val unirCon = videoPartida?.takeIf { modoPartida() == "video" && chkUnir.isChecked }
         val aspecto = if (grupoFormato.checkedButtonId == R.id.btnHorizontal) "16:9" else "9:16"
         ocupado(true)
         estado.text = "Enviando tu idea a la IA…"
         tarea = lifecycleScope.launch {
             try {
                 val op = withContext(Dispatchers.IO) {
-                    Gemini.iniciar(k, m!!, texto, aspecto, noQuiero.text?.toString().orEmpty())
+                    val img = bmpPartida?.let { Partida.paraIA(it) }
+                    Gemini.iniciar(k, m!!, texto, aspecto, noQuiero.text?.toString().orEmpty(), img)
                 }
-                prefs.edit().putString("operacion", op).putString("ideaActual", texto).apply()
+                prefs.edit().putString("operacion", op)
+                    .putString("ideaActual", texto.ifBlank { "Animación de tu imagen" })
+                    .putString("unirCon", unirCon?.absolutePath)
+                    .putFloat("unirHasta", sliderCuadro.value)
+                    .apply()
                 esperarVideo(op, SystemClock.elapsedRealtime())
             } catch (e: Exception) {
                 estado.text = e.message ?: "No se pudo empezar a generar el video."
@@ -315,8 +459,26 @@ class MainActivity : AppCompatActivity() {
                                 Procesar.limpiarViejos(applicationContext, horas = 24)
                                 Gemini.descargar(k, e.uri!!, destino)
                             }
-                            mostrarVideo(destino)
-                            estado.text = "¡Tu video está listo! 🎉"
+                            val original = prefs.getString("unirCon", null)?.let { File(it) }?.takeIf { it.exists() }
+                            val hasta = prefs.getFloat("unirHasta", 0f)
+                            prefs.edit().remove("unirCon").apply()
+                            if (original != null) {
+                                estado.text = "Uniendo tu video con el de la IA…"
+                                val unido = try {
+                                    withContext(Dispatchers.IO) {
+                                        Procesar.preparar(applicationContext)
+                                        Procesar.unir(applicationContext, original, hasta.toDouble(), destino)
+                                    }
+                                } catch (ex: Exception) {
+                                    null
+                                }
+                                mostrarVideo(unido ?: destino)
+                                estado.text = if (unido != null) "¡Listo! Tu video sigue con lo que generó la IA 🎉"
+                                else "¡Tu video está listo! (No se pudo unir con el original, te muestro solo el de la IA.)"
+                            } else {
+                                mostrarVideo(destino)
+                                estado.text = "¡Tu video está listo! 🎉"
+                            }
                         }
                         break
                     }

@@ -23,6 +23,14 @@ object Gemini {
         override fun toString() = nombre
     }
 
+    /** Imagen de partida (JPEG/PNG en base64). */
+    data class Imagen(val base64: String, val mime: String)
+
+    const val IDEA_POR_DEFECTO = "Animá esta imagen con movimiento natural y suave, como un video real."
+
+    /** La documentación muestra dos formatos para mandar la imagen; probamos los dos y recordamos el que anduvo. */
+    @Volatile var formatoImagenQueAnda = 0
+
     data class Estado(val terminado: Boolean, val uri: String? = null, val error: String? = null)
 
     // ---------- Partes puras (probadas con tests) ----------
@@ -59,9 +67,23 @@ object Gemini {
         else -> ""
     }
 
-    fun cuerpo(prompt: String, aspecto: String, noQuiero: String, conParametros: Boolean): JSONObject =
+    fun cuerpo(
+        prompt: String, aspecto: String, noQuiero: String, conParametros: Boolean,
+        imagen: Imagen? = null, formatoImagen: Int = 0,
+    ): JSONObject =
         JSONObject().apply {
-            put("instances", JSONArray().put(JSONObject().put("prompt", prompt)))
+            val instancia = JSONObject().put("prompt", prompt.ifBlank { IDEA_POR_DEFECTO })
+            if (imagen != null) {
+                instancia.put(
+                    "image",
+                    if (formatoImagen == 0) {
+                        JSONObject().put("inlineData", JSONObject().put("mimeType", imagen.mime).put("data", imagen.base64))
+                    } else {
+                        JSONObject().put("bytesBase64Encoded", imagen.base64).put("mimeType", imagen.mime)
+                    },
+                )
+            }
+            put("instances", JSONArray().put(instancia))
             if (conParametros) {
                 val p = JSONObject().put("aspectRatio", aspecto)
                 if (noQuiero.isNotBlank()) p.put("negativePrompt", noQuiero)
@@ -152,16 +174,33 @@ object Gemini {
         todos.distinctBy { it.id }.sortedWith(compareBy({ prioridad(it.id) }, { it.id }))
     }
 
-    /** Pide el video y devuelve el nombre de la operación. Si la API rechaza los ajustes, reintenta sin ellos. */
-    fun iniciar(clave: String, modelo: String, prompt: String, aspecto: String, noQuiero: String): String {
+    /**
+     * Pide el video y devuelve el nombre de la operación.
+     * Si la API rechaza el pedido (400), reintenta con el otro formato de imagen y/o sin ajustes opcionales.
+     */
+    fun iniciar(
+        clave: String, modelo: String, prompt: String, aspecto: String, noQuiero: String, imagen: Imagen? = null,
+    ): String {
         val url = "$BASE/models/$modelo:predictLongRunning"
-        val json = try {
-            pedir("POST", url, clave, cuerpo(prompt, aspecto, noQuiero, conParametros = true))
-        } catch (e: ErrorHttp) {
-            if (e.codigo != 400 || "api key" in e.mensaje.lowercase(Locale.ROOT)) throw ErrorIA(traducir(e.mensaje, e.codigo))
-            amigable { pedir("POST", url, clave, cuerpo(prompt, aspecto, noQuiero, conParametros = false)) }
+        val formatos = if (imagen == null) listOf(0) else listOf(formatoImagenQueAnda, 1 - formatoImagenQueAnda)
+        val intentos = listOf(true, false).flatMap { params -> formatos.map { f -> params to f } }
+        var ultimo: ErrorHttp? = null
+        for ((params, formato) in intentos) {
+            try {
+                val json = pedir("POST", url, clave, cuerpo(prompt, aspecto, noQuiero, params, imagen, formato))
+                if (imagen != null) formatoImagenQueAnda = formato
+                return JSONObject(json).optString("name").ifBlank { throw ErrorIA("La IA no aceptó el pedido.") }
+            } catch (e: ErrorHttp) {
+                ultimo = e
+                // Solo vale la pena reintentar si es un error de formato del pedido.
+                if (e.codigo != 400 || "api key" in e.mensaje.lowercase(Locale.ROOT)) break
+            }
         }
-        return JSONObject(json).optString("name").ifBlank { throw ErrorIA("La IA no aceptó el pedido.") }
+        val e = ultimo!!
+        if (imagen != null && e.codigo == 400 && "image" in e.mensaje.lowercase(Locale.ROOT)) {
+            throw ErrorIA("Este modelo no acepta imágenes de partida. Elegí otro modelo en Configuración. (${e.mensaje.take(150)})")
+        }
+        throw ErrorIA(traducir(e.mensaje, e.codigo))
     }
 
     fun consultar(clave: String, operacion: String): Estado = amigable {

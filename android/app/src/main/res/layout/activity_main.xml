@@ -146,6 +146,11 @@
                     android:text="Mandar por WhatsApp" />
 
                 <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnEditar"
+                    style="@style/Boton.Borde"
+                    android:text="✂️ Editar gratis (CapCut, InShot…)" />
+
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnGuardar"
                     style="@style/Boton.Borde"
                     android:text="Guardar en la galería" />

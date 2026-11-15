@@ -14,6 +14,7 @@ App de Android que descarga videos de Instagram, los manda por WhatsApp y hace *
 - O abrí la app, pegá el link y tocá **Descargar**.
 - **Mandar por WhatsApp:** abre WhatsApp con el video y elegís un chat o **Mi estado**.
 - **Achicar a menos de 16 MB:** aparece si el video es muy pesado para WhatsApp.
+- **✂️ Editar gratis:** manda el video a CapCut, InShot, YouCut o VN; si no las tenés, te abre Play Store.
 - **Hacer sticker animado:** elegís el momento y la duración (hasta 10 s). Sale en WebP animado de 512×512 y menos de 500 KB, con los datos de paquete que usa WhatsApp.
 - **Si no se puede publicar directo** (WhatsApp no está instalado, no abre o el video es muy pesado), el archivo se guarda solo en la galería: `Movies/InstaWasap` o `Pictures/InstaWasap`.
 - yt-dlp se actualiza solo una vez por día, porque Instagram cambia seguido.
@@ -56,8 +57,14 @@ Precios publicados en noviembre de 2026; Google los puede cambiar:
 | Veo (calidad máxima) | US$ 3,20 |
 
 ## Usar
+- **Empezar desde:**
+  - **Texto:** describís el video.
+  - **Imagen:** elegís una foto y la IA la anima. Podés agregar qué querés que pase.
+  - **Video:** elegís un video y un momento (por defecto, el final). La IA sigue desde ese cuadro y, si dejás marcado "Unir", la app pega tu video con el que generó la IA, ajustando tamaño y audio.
+  - También podés compartir una foto o un video desde la galería, CapCut u otra app → **VideoIA**.
 - Escribí la idea con detalle: quién, qué hace, dónde, estilo y cámara. O tocá una de las ideas de ejemplo.
 - **Vertical** sirve para estados de WhatsApp; **Horizontal** para compartir normal.
 - La IA tarda entre 1 y 3 minutos. Podés salir de la app: al volver, sigue esperando el video.
 - Si la IA rechaza la idea por sus reglas de seguridad, la app te avisa. Pasa, por ejemplo, con personas famosas o con violencia.
 - La clave de API se guarda solo en tu celular.
+- **✂️ Editar gratis:** manda el video a **CapCut, InShot, YouCut o VN**, que son gratis. Si no tenés ninguna instalada, te abre Play Store. Cuando termines de editar, podés compartirlo directo a WhatsApp desde el editor, o volver a VideoIA para seguir con la IA o hacerlo sticker.
