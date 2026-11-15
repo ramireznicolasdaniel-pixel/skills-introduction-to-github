@@ -66,6 +66,97 @@
                     android:textStyle="bold" />
 
                 <TextView
+                    style="@style/Etiqueta"
+                    android:text="¿Con qué IA generar los videos?" />
+
+                <com.google.android.material.button.MaterialButtonToggleGroup
+                    android:id="@+id/grupoProveedor"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    app:checkedButton="@+id/btnProvGoogle"
+                    app:selectionRequired="true"
+                    app:singleSelection="true">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnProvGoogle"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Google Veo" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnProvAbx"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Abracadabrax" />
+                </com.google.android.material.button.MaterialButtonToggleGroup>
+
+                <!-- Abracadabrax -->
+                <LinearLayout
+                    android:id="@+id/seccionAbx"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="Usa tu cuenta de Abracadabrax (Kling, Seedance, Sora o Veo). Los videos se pagan con créditos de Abracadabrax: antes de generar, la app te muestra cuántos créditos cuesta y te pide confirmar. Registrarse es gratis."
+                        android:textColor="@color/sub" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnConectarAbx"
+                        style="@style/Boton"
+                        android:text="Conectar mi cuenta de Abracadabrax" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnPanelAbx"
+                        style="@style/Boton.Borde"
+                        android:text="Abrir mi cuenta (créditos)" />
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:hint="Modelo de video">
+
+                        <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                            android:id="@+id/modeloAbx"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="none" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:hint="Duración (segundos)">
+
+                        <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                            android:id="@+id/durAbx"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="none" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+
+                <!-- Google Veo -->
+                <LinearLayout
+                    android:id="@+id/seccionGoogle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
@@ -112,6 +203,7 @@
                         android:layout_height="wrap_content"
                         android:inputType="none" />
                 </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
 
                 <TextView
                     android:id="@+id/estadoConfig"
@@ -129,9 +221,28 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
+                <com.google.android.material.textfield.TextInputLayout
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="🎵 Escenas de Tito y Pancho (dibujito 3D)">
+
+                    <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                        android:id="@+id/escenaTito"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="none" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnLetra"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Ver la letra de la canción" />
+
                 <TextView
                     style="@style/Etiqueta"
-                    android:layout_marginTop="0dp"
                     android:text="Empezar desde" />
 
                 <com.google.android.material.button.MaterialButtonToggleGroup
@@ -317,6 +428,23 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:inputType="text|textCapSentences"
+                        android:maxLines="2" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/cajaEstilo"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:hint="Estilo (ej: 3D animation, anime, cinematic)"
+                    android:visibility="gone">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/estilo"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="text"
                         android:maxLines="2" />
                 </com.google.android.material.textfield.TextInputLayout>
 

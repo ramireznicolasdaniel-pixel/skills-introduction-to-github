@@ -33,6 +33,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Volver a la app después de iniciar sesión en Abracadabrax -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="videoia" android:host="volver" />
+            </intent-filter>
             <!-- Compartir un texto desde otra app = usarlo como idea para el video -->
             <intent-filter android:label="Hacer video con IA">
                 <action android:name="android.intent.action.SEND" />

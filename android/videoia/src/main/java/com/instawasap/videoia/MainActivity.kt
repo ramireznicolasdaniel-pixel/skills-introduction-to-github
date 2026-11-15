@@ -50,9 +50,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
+import kotlin.coroutines.resume
 
 class MainActivity : AppCompatActivity() {
 
@@ -73,6 +75,16 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnCancelar: MaterialButton
     private lateinit var progreso: LinearProgressIndicator
     private lateinit var estado: TextView
+
+    // Abracadabrax
+    private lateinit var grupoProveedor: MaterialButtonToggleGroup
+    private lateinit var seccionAbx: View
+    private lateinit var seccionGoogle: View
+    private lateinit var modeloAbx: MaterialAutoCompleteTextView
+    private lateinit var durAbx: MaterialAutoCompleteTextView
+    private lateinit var cajaEstilo: View
+    private lateinit var estilo: TextInputEditText
+    private lateinit var escenaTito: MaterialAutoCompleteTextView
 
     // Punto de partida (imagen o video)
     private lateinit var grupoPartida: MaterialButtonToggleGroup
@@ -126,6 +138,7 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) { runCatching { Procesar.preparar(applicationContext) } }
         // Si la app se cerró mientras se generaba un video, seguimos esperándolo.
         prefs.getString("operacion", null)?.let { esperarVideo(it, SystemClock.elapsedRealtime()) }
+        prefs.getString("abx_trabajo", null)?.let { esperarAbx(it, SystemClock.elapsedRealtime()) }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -146,6 +159,14 @@ class MainActivity : AppCompatActivity() {
         btnCancelar = findViewById(R.id.btnCancelar)
         progreso = findViewById(R.id.progreso)
         estado = findViewById(R.id.estado)
+        grupoProveedor = findViewById(R.id.grupoProveedor)
+        seccionAbx = findViewById(R.id.seccionAbx)
+        seccionGoogle = findViewById(R.id.seccionGoogle)
+        modeloAbx = findViewById(R.id.modeloAbx)
+        durAbx = findViewById(R.id.durAbx)
+        cajaEstilo = findViewById(R.id.cajaEstilo)
+        estilo = findViewById(R.id.estilo)
+        escenaTito = findViewById(R.id.escenaTito)
         grupoPartida = findViewById(R.id.grupoPartida)
         partidaImagen = findViewById(R.id.partidaImagen)
         partidaVideo = findViewById(R.id.partidaVideo)
@@ -194,6 +215,7 @@ class MainActivity : AppCompatActivity() {
             (v as Chip).setOnClickListener { idea.setText(v.text); idea.setSelection(v.text.length) }
         }
         btnGenerar.setOnClickListener { generar() }
+        configurarAbx()
         grupoPartida.addOnButtonCheckedListener { _, _, _ -> mostrarPartida() }
         findViewById<MaterialButton>(R.id.btnElegirImagen).setOnClickListener {
             elegirImagen.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
@@ -329,6 +351,15 @@ class MainActivity : AppCompatActivity() {
     private val claveGuardada get() = prefs.getString("clave", "").orEmpty()
 
     private fun cargarConfig() {
+        grupoProveedor.check(if (esAbx()) R.id.btnProvAbx else R.id.btnProvGoogle)
+        aplicarProveedor()
+        if (esAbx()) {
+            if (prefs.getString("abx_acceso", null) == null) {
+                cardConfig.visibility = View.VISIBLE
+                estado.text = "Conectá tu cuenta de Abracadabrax para empezar (⚙ Configuración)."
+            }
+            return
+        }
         clave.setText(claveGuardada)
         if (claveGuardada.isBlank()) {
             cardConfig.visibility = View.VISIBLE
@@ -377,6 +408,10 @@ class MainActivity : AppCompatActivity() {
     private fun modeloElegido(): String? = prefs.getString("modelo", null)
 
     private fun mostrarCosto() {
+        if (esAbx()) {
+            costo.text = "Abracadabrax te muestra el costo en créditos antes de generar, y vos confirmás."
+            return
+        }
         val id = modeloElegido() ?: return
         costo.text = "Cada video dura unos 8 segundos. Costo aprox.:${Gemini.costoTexto(id).removePrefix(" ·")} (lo cobra Google a tu cuenta)."
     }
@@ -395,6 +430,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun generar() {
+        if (esAbx()) {
+            generarAbx()
+            return
+        }
         val k = claveGuardada
         val m = modeloElegido()
         val texto = idea.text?.toString()?.trim().orEmpty()
@@ -502,9 +541,264 @@ class MainActivity : AppCompatActivity() {
 
     private fun cancelar() {
         tarea?.cancel()
-        prefs.edit().remove("operacion").apply()
-        estado.text = "Cancelado. (Si Google ya empezó a generarlo, igual puede cobrarlo.)"
+        prefs.edit().remove("operacion").remove("abx_trabajo").apply()
+        estado.text = if (esAbx()) "Dejé de esperar. Si Abracadabrax ya lo estaba generando, lo vas a encontrar en tu cuenta (Abrir mi cuenta)."
+        else "Cancelado. (Si Google ya empezó a generarlo, igual puede cobrarlo.)"
         ocupado(false)
+    }
+
+    // ---------- Abracadabrax ----------
+
+    private fun esAbx() = prefs.getString("proveedor", "google") == "abx"
+
+    private fun configurarAbx() {
+        grupoProveedor.addOnButtonCheckedListener { _, id, marcado ->
+            if (!marcado) return@addOnButtonCheckedListener
+            prefs.edit().putString("proveedor", if (id == R.id.btnProvAbx) "abx" else "google").apply()
+            aplicarProveedor()
+            if (!esAbx() && modelos.isEmpty() && claveGuardada.isNotBlank()) buscarModelos(claveGuardada, silencioso = true)
+        }
+        findViewById<MaterialButton>(R.id.btnConectarAbx).setOnClickListener { conectarAbx() }
+        findViewById<MaterialButton>(R.id.btnPanelAbx).setOnClickListener {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Abracadabrax.SITIO)))
+        }
+        modeloAbx.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, Abracadabrax.MODELOS))
+        modeloAbx.setOnItemClickListener { _, _, pos, _ ->
+            prefs.edit().putString("abx_modelo", Abracadabrax.MODELOS[pos].id).apply()
+            actualizarDuraciones()
+        }
+        val m = modeloAbxElegido()
+        modeloAbx.setText(m.nombre, false)
+        actualizarDuraciones()
+        durAbx.setOnItemClickListener { _, _, pos, _ ->
+            prefs.edit().putInt("abx_dur", modeloAbxElegido().duraciones[pos]).apply()
+        }
+        estilo.setText(prefs.getString("abx_estilo", Plantillas.ESTILO_INFANTIL))
+
+        // Escenas de Tito y Pancho
+        escenaTito.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, Plantillas.TITO_Y_PANCHO))
+        escenaTito.setOnItemClickListener { _, _, pos, _ ->
+            val e = Plantillas.TITO_Y_PANCHO[pos]
+            grupoPartida.check(R.id.btnSoloTexto)
+            grupoFormato.check(R.id.btnVertical)
+            if (esAbx()) {
+                estilo.setText(Plantillas.ESTILO_INFANTIL)
+                idea.setText(e.texto)
+            } else {
+                idea.setText("${Plantillas.ESTILO_INFANTIL}. ${e.texto}") // Google no tiene campo de estilo
+            }
+            prefs.edit().putString("ideaActual", "Tito y Pancho — ${e.titulo}").apply()
+        }
+        findViewById<MaterialButton>(R.id.btnLetra).setOnClickListener {
+            MaterialAlertDialogBuilder(this)
+                .setTitle("🎵 Los colores con Tito y Pancho")
+                .setMessage(Plantillas.LETRA.replace(" / ", "\n"))
+                .setPositiveButton("Cerrar", null)
+                .show()
+        }
+    }
+
+    private fun modeloAbxElegido(): Abracadabrax.ModeloAbx {
+        val id = prefs.getString("abx_modelo", null)
+        return Abracadabrax.MODELOS.firstOrNull { it.id == id } ?: Abracadabrax.MODELOS.first()
+    }
+
+    private fun duracionAbx(): Int {
+        val m = modeloAbxElegido()
+        val d = prefs.getInt("abx_dur", 0)
+        return if (d in m.duraciones) d else m.duraciones.first()
+    }
+
+    private fun actualizarDuraciones() {
+        val m = modeloAbxElegido()
+        durAbx.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, m.duraciones.map { "$it segundos" }))
+        durAbx.setText("${duracionAbx()} segundos", false)
+    }
+
+    private fun aplicarProveedor() {
+        val abx = esAbx()
+        seccionAbx.visibility = if (abx) View.VISIBLE else View.GONE
+        seccionGoogle.visibility = if (abx) View.GONE else View.VISIBLE
+        cajaEstilo.visibility = if (abx) View.VISIBLE else View.GONE
+        if (abx) {
+            estadoConfig.text = if (prefs.getString("abx_acceso", null) != null) "✓ Cuenta de Abracadabrax conectada."
+            else "Todavía no conectaste tu cuenta de Abracadabrax."
+        }
+        mostrarCosto()
+    }
+
+    /** Inicio de sesión: navegador -> Abracadabrax -> vuelve a 127.0.0.1 en este celular -> token. */
+    private fun conectarAbx() {
+        estadoConfig.text = "Abriendo Abracadabrax en el navegador… Iniciá sesión (o registrate) y aceptá."
+        lifecycleScope.launch {
+            var servidor: java.net.ServerSocket? = null
+            try {
+                servidor = withContext(Dispatchers.IO) { Abracadabrax.abrirServidorLocal() }
+                val redireccion = "http://127.0.0.1:${servidor.localPort}/oauth"
+                val cliente = withContext(Dispatchers.IO) { Abracadabrax.registrar(redireccion) }
+                val pk = Abracadabrax.pkce()
+                val estadoOAuth = Abracadabrax.aleatorio()
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Abracadabrax.urlAutorizar(cliente, redireccion, pk.desafio, estadoOAuth))))
+                val srv = servidor
+                val codigo = withContext(Dispatchers.IO) { Abracadabrax.esperarCodigo(srv, estadoOAuth) }
+                val t = withContext(Dispatchers.IO) { Abracadabrax.canjear(cliente, redireccion, codigo, pk.verificador) }
+                guardarTokens(cliente, t)
+                estadoConfig.text = "✓ Cuenta de Abracadabrax conectada."
+                estado.text = "¡Listo! Ya podés generar videos con Abracadabrax."
+                cardConfig.visibility = View.GONE
+            } catch (e: Exception) {
+                estadoConfig.text = e.message ?: "No se pudo conectar."
+            } finally {
+                runCatching { servidor?.close() }
+            }
+        }
+    }
+
+    private fun guardarTokens(cliente: String, t: Abracadabrax.Tokens) {
+        prefs.edit().putString("abx_cliente", cliente).putString("abx_acceso", t.acceso)
+            .putString("abx_refresco", t.refresco ?: prefs.getString("abx_refresco", null))
+            .putLong("abx_vence", t.venceMs).apply()
+    }
+
+    /** Token vigente (lo renueva si venció). */
+    private suspend fun tokenAbx(forzarRenovar: Boolean = false): String = withContext(Dispatchers.IO) {
+        val acceso = prefs.getString("abx_acceso", null) ?: throw ErrorIA("Primero conectá tu cuenta de Abracadabrax (⚙ Configuración).")
+        val vencido = System.currentTimeMillis() > prefs.getLong("abx_vence", 0)
+        if (!vencido && !forzarRenovar) return@withContext acceso
+        val cliente = prefs.getString("abx_cliente", null)
+        val refresco = prefs.getString("abx_refresco", null)
+        if (cliente == null || refresco == null) throw Abracadabrax.SesionVencida()
+        val t = Abracadabrax.refrescar(cliente, refresco)
+        guardarTokens(cliente, t)
+        t.acceso
+    }
+
+    /** Ejecuta con la cuenta; si la sesión venció, renueva una vez y reintenta. */
+    private suspend fun <T> conCuenta(bloque: (Abracadabrax.Conexion) -> T): T {
+        return try {
+            val c = Abracadabrax.Conexion(tokenAbx())
+            withContext(Dispatchers.IO) { bloque(c) }
+        } catch (e: Abracadabrax.SesionVencida) {
+            val c = Abracadabrax.Conexion(tokenAbx(forzarRenovar = true))
+            withContext(Dispatchers.IO) { bloque(c) }
+        }
+    }
+
+    private suspend fun confirmar(titulo: String, mensaje: String, si: String): Boolean =
+        suspendCancellableCoroutine { cont ->
+            val d = MaterialAlertDialogBuilder(this)
+                .setTitle(titulo)
+                .setMessage(mensaje)
+                .setPositiveButton(si) { _, _ -> if (cont.isActive) cont.resume(true) }
+                .setNegativeButton("Cancelar") { _, _ -> if (cont.isActive) cont.resume(false) }
+                .setOnCancelListener { if (cont.isActive) cont.resume(false) }
+                .show()
+            cont.invokeOnCancellation { d.dismiss() }
+        }
+
+    private fun avisoConPanel(mensaje: String, panel: String?) {
+        val b = MaterialAlertDialogBuilder(this).setTitle("Abracadabrax").setMessage(mensaje).setPositiveButton("Entendido", null)
+        if (panel != null) b.setNeutralButton("Abrir mi cuenta") { _, _ -> startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(panel))) }
+        b.show()
+    }
+
+    private fun generarAbx() {
+        if (prefs.getString("abx_acceso", null) == null) {
+            cardConfig.visibility = View.VISIBLE
+            estado.text = "Primero conectá tu cuenta de Abracadabrax."
+            return
+        }
+        if (modoPartida() != "texto") {
+            estado.text = "Con Abracadabrax por ahora se crea desde texto. Para animar una imagen o seguir un video, elegí Google Veo en Configuración."
+            return
+        }
+        val escena = idea.text?.toString()?.trim().orEmpty()
+        if (escena.length < 5) { estado.text = "Escribí qué pasa en el video (quién, qué hace, dónde, cámara)."; return }
+        val estiloTxt = estilo.text?.toString()?.trim().orEmpty()
+        prefs.edit().putString("abx_estilo", estiloTxt).apply()
+        val formato = if (grupoFormato.checkedButtonId == R.id.btnHorizontal) "landscape" else "vertical"
+        val modelo = modeloAbxElegido()
+        val segundos = duracionAbx()
+        ocupado(true)
+        estado.text = "Preparando el borrador en Abracadabrax (no gasta créditos)…"
+        tarea = lifecycleScope.launch {
+            try {
+                val b = conCuenta { Abracadabrax.preparar(it, escena, estiloTxt, formato, segundos, modelo.id) }
+                Abracadabrax.mensajeEstado(b.estado, b.panel)?.let { avisoConPanel(it, b.panel); estado.text = it; ocupado(false); return@launch }
+                val costoTxt = b.creditos?.let { "Este video cuesta $it créditos." } ?: "Abracadabrax no informó el costo."
+                val saldoTxt = b.saldo?.let { " Te quedan $it créditos." }.orEmpty()
+                val ok = confirmar(
+                    "¿Generar el video?",
+                    "$costoTxt$saldoTxt\n\n${modelo.nombre} · $segundos s · ${if (formato == "vertical") "vertical" else "horizontal"}",
+                    "Sí, generar",
+                )
+                if (!ok) { estado.text = "No se generó nada (no se gastaron créditos)."; ocupado(false); return@launch }
+                estado.text = "Enviando a Abracadabrax…"
+                val t = conCuenta { Abracadabrax.generar(it, b.proyecto) }
+                Abracadabrax.mensajeEstado(t.estado, t.panel ?: b.panel)?.let {
+                    avisoConPanel(it, t.panel ?: b.panel); estado.text = it; ocupado(false); return@launch
+                }
+                val job = t.id ?: throw ErrorIA("Abracadabrax no devolvió el trabajo.")
+                if (prefs.getString("ideaActual", null)?.startsWith("Tito y Pancho") != true) {
+                    prefs.edit().putString("ideaActual", escena.take(120)).apply()
+                }
+                prefs.edit().putString("abx_trabajo", job).apply()
+                esperarAbx(job, SystemClock.elapsedRealtime())
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                estado.text = e.message ?: "No se pudo generar con Abracadabrax."
+                ocupado(false)
+            }
+        }
+    }
+
+    /** Consulta cada 6 s hasta que Abracadabrax termine el video. */
+    private fun esperarAbx(job: String, desde: Long) {
+        ocupado(true)
+        tarea = lifecycleScope.launch {
+            try {
+                while (isActive) {
+                    val seg = (SystemClock.elapsedRealtime() - desde) / 1000
+                    estado.text = String.format(Locale.US, "Abracadabrax está generando el video… %d:%02d", seg / 60, seg % 60)
+                    val t = conCuenta { Abracadabrax.consultar(it, job) }
+                    when (t.estado) {
+                        "completed" -> {
+                            prefs.edit().remove("abx_trabajo").apply()
+                            val url = t.video ?: throw ErrorIA("Abracadabrax terminó pero no mandó el link del video.")
+                            estado.text = "Descargando el video…"
+                            val destino = File(Procesar.carpeta(applicationContext), Procesar.nuevoId() + ".mp4")
+                            val token = tokenAbx()
+                            withContext(Dispatchers.IO) {
+                                Procesar.limpiarViejos(applicationContext, horas = 24)
+                                Abracadabrax.descargar(url, token, destino)
+                            }
+                            mostrarVideo(destino)
+                            estado.text = "¡Tu video está listo! 🎉"
+                            break
+                        }
+                        "failed", "insufficient_credits", "pending_payment", "account_required" -> {
+                            prefs.edit().remove("abx_trabajo").apply()
+                            val msg = (t.error?.let { "Abracadabrax: $it" } ?: Abracadabrax.mensajeEstado(t.estado, t.panel)).orEmpty()
+                            estado.text = msg
+                            avisoConPanel(msg, t.panel)
+                            break
+                        }
+                    }
+                    if (seg > 20 * 60) {
+                        estado.text = "Está tardando mucho. Cuando termine, lo vas a encontrar en tu cuenta de Abracadabrax."
+                        break
+                    }
+                    delay(6_000)
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                estado.text = (e.message ?: "Error") + " (Si cerrás y abrís la app, sigue esperando el video.)"
+            } finally {
+                ocupado(false)
+            }
+        }
     }
 
     // ---------- Resultado ----------
