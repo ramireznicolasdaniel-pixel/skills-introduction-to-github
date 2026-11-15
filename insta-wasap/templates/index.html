@@ -86,6 +86,16 @@ function mostrar(dest, texto, tipo = "err") {
   if (texto) $(dest).firstChild.textContent = texto;
 }
 
+// Plan B: si no se puede publicar en WhatsApp, el video se descarga al dispositivo.
+function descargarLocal(motivo) {
+  if (!actual) return;
+  const a = document.createElement("a");
+  a.href = `/video/${actual.archivo}?dl=1`;
+  a.download = "instagram.mp4";
+  document.body.appendChild(a); a.click(); a.remove();
+  mostrar("msg2", `${motivo} El video se descargó a tu dispositivo: subilo a WhatsApp desde la galería o archivos.`, "ok");
+}
+
 $("pegar").onclick = async () => {
   try { $("url").value = (await navigator.clipboard.readText()).trim(); }
   catch { $("url").focus(); }
@@ -106,8 +116,9 @@ $("descargar").onclick = async () => {
     $("guardar").href = `/video/${d.archivo}?dl=1`;
     $("meta").textContent = `${d.autor ? "@" + d.autor + " · " : ""}${d.mb} MB — ${d.titulo}`;
     if ($("texto")) $("texto").value = d.titulo;
-    mostrar("aviso", d.supera_limite ? `Pesa ${d.mb} MB: WhatsApp permite hasta 16 MB por video y puede rechazarlo.` : "");
+    mostrar("aviso", "");
     $("resultado").classList.remove("oculto");
+    if (d.supera_limite) descargarLocal(`Pesa ${d.mb} MB y WhatsApp acepta hasta 16 MB, así que no se puede publicar directo.`);
     $("resultado").scrollIntoView({ behavior: "smooth" });
   } catch (e) {
     mostrar("msg1", e.message);
@@ -126,13 +137,12 @@ $("compartir").onclick = async () => {
       // En el celular abre el menú de compartir: elegí WhatsApp (chat o estado).
       await navigator.share({ files: [file], text: actual.titulo });
     } else {
-      // En PC: se guarda el video y se abre WhatsApp Web para adjuntarlo.
-      $("guardar").click();
+      // Este navegador no puede compartir archivos: se descarga y se abre WhatsApp Web.
+      descargarLocal("Este navegador no permite publicar directo.");
       window.open("https://web.whatsapp.com/", "_blank");
-      mostrar("msg2", "Video guardado. Adjuntalo en el chat de WhatsApp Web que se abrió.", "ok");
     }
   } catch (e) {
-    if (e.name !== "AbortError") mostrar("msg2", e.message);
+    if (e.name !== "AbortError") descargarLocal("No se pudo publicar directo.");
   } finally { b.disabled = false; }
 };
 
@@ -145,7 +155,7 @@ if ($("enviar")) $("enviar").onclick = async () => {
     const d = await r.json();
     if (!r.ok) throw new Error(d.error);
     mostrar("msg2", "¡Enviado por WhatsApp!", "ok");
-  } catch (e) { mostrar("msg2", e.message); }
+  } catch (e) { descargarLocal(`No se pudo enviar (${e.message}).`); }
   finally { b.disabled = false; b.textContent = "Enviar por WhatsApp API"; }
 };
 

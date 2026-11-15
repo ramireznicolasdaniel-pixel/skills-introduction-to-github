@@ -7,6 +7,7 @@ App web que **descarga videos de Instagram** (reels, posts, IGTV) y los **sube a
 2. Ves el video y elegís:
    - **Compartir en WhatsApp**: en el celular abre el menú de compartir con el archivo → elegís un chat o tu **estado**. En PC lo guarda y abre WhatsApp Web.
    - **Guardar en el dispositivo**.
+   - **Si no se puede publicar directo** (navegador sin compartir, error de la API o video de más de 16 MB), el video se descarga automáticamente para subirlo a mano desde la galería.
    - **Enviar por WhatsApp API** (opcional): lo manda directo a un número usando la API oficial de WhatsApp Cloud (Meta).
 
 ## Instalación
