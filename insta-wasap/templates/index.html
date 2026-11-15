@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>InstaWasap</title>
+<style>
+  :root { --bg:#f4f5f7; --card:#fff; --txt:#1c1e21; --sub:#65676b; --borde:#dddfe2;
+          --wa:#25d366; --wa-osc:#128c7e; --ig:linear-gradient(45deg,#f58529,#dd2a7b,#8134af); --err:#d93025; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#121212; --card:#1e1e1e; --txt:#e4e6eb; --sub:#a8abaf; --borde:#333; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--txt); }
+  main { max-width:520px; margin:0 auto; padding:24px 16px 48px; }
+  h1 { font-size:1.6rem; margin:0 0 4px; }
+  h1 span { background:var(--ig); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  h1 b { color:var(--wa); }
+  p.sub { color:var(--sub); margin:0 0 20px; }
+  .card { background:var(--card); border:1px solid var(--borde); border-radius:14px; padding:16px; margin-bottom:16px; }
+  label { font-size:.85rem; color:var(--sub); display:block; margin-bottom:6px; }
+  input, textarea { width:100%; padding:12px; border-radius:10px; border:1px solid var(--borde);
+                    background:transparent; color:var(--txt); font-size:1rem; }
+  textarea { resize:vertical; min-height:60px; font-family:inherit; }
+  button, a.btn { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; padding:13px;
+                  border:0; border-radius:10px; font-size:1rem; font-weight:600; cursor:pointer; margin-top:10px;
+                  text-decoration:none; color:#fff; }
+  button:disabled { opacity:.6; cursor:wait; }
+  .ig { background:var(--ig); }
+  .wa { background:var(--wa); }
+  .wa2 { background:var(--wa-osc); }
+  .gris { background:transparent; color:var(--txt); border:1px solid var(--borde); }
+  video { width:100%; max-height:60vh; border-radius:10px; background:#000; }
+  .meta { font-size:.85rem; color:var(--sub); margin:8px 0 0; overflow-wrap:anywhere; }
+  .msg { padding:10px 12px; border-radius:10px; margin-top:10px; font-size:.9rem; }
+  .msg.err { background:color-mix(in srgb, var(--err) 15%, transparent); color:var(--err); }
+  .msg.ok { background:color-mix(in srgb, var(--wa) 15%, transparent); color:var(--wa-osc); }
+  .oculto { display:none; }
+  .fila { display:flex; gap:10px; } .fila > * { flex:1; }
+  footer { font-size:.75rem; color:var(--sub); text-align:center; }
+</style>
+</head>
+<body>
+<main>
+  <h1><span>Insta</span><b>Wasap</b></h1>
+  <p class="sub">Pegá un link de Instagram, descargá el video y mandalo por WhatsApp.</p>
+
+  <div class="card">
+    <label for="url">Link del reel / post</label>
+    <input id="url" type="url" inputmode="url" placeholder="https://www.instagram.com/reel/..." autocomplete="off">
+    <div class="fila">
+      <button class="gris" id="pegar" type="button">Pegar</button>
+      <button class="ig" id="descargar" type="button">Descargar</button>
+    </div>
+    <div id="msg1"></div>
+  </div>
+
+  <div class="card oculto" id="resultado">
+    <video id="player" controls playsinline></video>
+    <p class="meta" id="meta"></p>
+    <div id="aviso"></div>
+
+    <button class="wa" id="compartir" type="button">Compartir en WhatsApp</button>
+    <a class="btn gris" id="guardar" href="#">Guardar en el dispositivo</a>
+
+    {% if api_activa %}
+    <hr style="border:0;border-top:1px solid var(--borde);margin:18px 0">
+    <label for="tel">Enviar directo con la API (número con código de país)</label>
+    <input id="tel" type="tel" placeholder="5491122334455">
+    <label for="texto" style="margin-top:10px">Texto (opcional)</label>
+    <textarea id="texto"></textarea>
+    <button class="wa2" id="enviar" type="button">Enviar por WhatsApp API</button>
+    {% endif %}
+    <div id="msg2"></div>
+  </div>
+
+  <footer>Usalo solo con videos propios o con permiso del autor.</footer>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let actual = null;
+
+function mostrar(dest, texto, tipo = "err") {
+  $(dest).innerHTML = texto ? `<div class="msg ${tipo}"></div>` : "";
+  if (texto) $(dest).firstChild.textContent = texto;
+}
+
+$("pegar").onclick = async () => {
+  try { $("url").value = (await navigator.clipboard.readText()).trim(); }
+  catch { $("url").focus(); }
+};
+
+$("descargar").onclick = async () => {
+  const url = $("url").value.trim();
+  mostrar("msg1", ""); mostrar("msg2", "");
+  if (!url) return mostrar("msg1", "Pegá un link primero.");
+  const b = $("descargar"); b.disabled = true; b.textContent = "Descargando…";
+  try {
+    const r = await fetch("/api/descargar", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || "Error desconocido");
+    actual = d;
+    $("player").src = `/video/${d.archivo}`;
+    $("guardar").href = `/video/${d.archivo}?dl=1`;
+    $("meta").textContent = `${d.autor ? "@" + d.autor + " · " : ""}${d.mb} MB — ${d.titulo}`;
+    if ($("texto")) $("texto").value = d.titulo;
+    mostrar("aviso", d.supera_limite ? `Pesa ${d.mb} MB: WhatsApp permite hasta 16 MB por video y puede rechazarlo.` : "");
+    $("resultado").classList.remove("oculto");
+    $("resultado").scrollIntoView({ behavior: "smooth" });
+  } catch (e) {
+    mostrar("msg1", e.message);
+  } finally {
+    b.disabled = false; b.textContent = "Descargar";
+  }
+};
+
+$("compartir").onclick = async () => {
+  if (!actual) return;
+  const b = $("compartir"); b.disabled = true;
+  try {
+    const blob = await (await fetch(`/video/${actual.archivo}`)).blob();
+    const file = new File([blob], "instagram.mp4", { type: "video/mp4" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      // En el celular abre el menú de compartir: elegí WhatsApp (chat o estado).
+      await navigator.share({ files: [file], text: actual.titulo });
+    } else {
+      // En PC: se guarda el video y se abre WhatsApp Web para adjuntarlo.
+      $("guardar").click();
+      window.open("https://web.whatsapp.com/", "_blank");
+      mostrar("msg2", "Video guardado. Adjuntalo en el chat de WhatsApp Web que se abrió.", "ok");
+    }
+  } catch (e) {
+    if (e.name !== "AbortError") mostrar("msg2", e.message);
+  } finally { b.disabled = false; }
+};
+
+if ($("enviar")) $("enviar").onclick = async () => {
+  if (!actual) return;
+  const b = $("enviar"); b.disabled = true; b.textContent = "Enviando…";
+  try {
+    const r = await fetch("/api/enviar", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archivo: actual.archivo, telefono: $("tel").value, texto: $("texto").value }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    mostrar("msg2", "¡Enviado por WhatsApp!", "ok");
+  } catch (e) { mostrar("msg2", e.message); }
+  finally { b.disabled = false; b.textContent = "Enviar por WhatsApp API"; }
+};
+
+$("url").addEventListener("keydown", e => { if (e.key === "Enter") $("descargar").click(); });
+</script>
+</body>
+</html>
