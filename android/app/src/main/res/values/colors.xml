@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ig">#DD2A7B</color>
+    <color name="ig_naranja">#F58529</color>
+    <color name="ig_violeta">#8134AF</color>
+    <color name="wa">#25D366</color>
+    <color name="wa_oscuro">#128C7E</color>
+    <color name="fondo">#F4F5F7</color>
+    <color name="tarjeta">#FFFFFF</color>
+    <color name="texto">#1C1E21</color>
+    <color name="sub">#65676B</color>
+    <color name="error">#D93025</color>
+</resources>
