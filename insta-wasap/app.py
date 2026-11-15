@@ -1,6 +1,7 @@
 """InstaWasap: descarga videos de Instagram y los comparte/envía por WhatsApp."""
 import os
 import re
+import time
 import uuid
 from pathlib import Path
 
@@ -25,8 +26,17 @@ MAX_MB_WHATSAPP = 16  # límite de video de WhatsApp
 app = Flask(__name__)
 
 
+def limpiar_viejos(horas: float = 1) -> None:
+    """Borra videos descargados hace más de `horas` para no llenar la memoria."""
+    limite = time.time() - horas * 3600
+    for f in DESCARGAS.iterdir():
+        if f.stat().st_mtime < limite:
+            f.unlink(missing_ok=True)
+
+
 def descargar_instagram(url: str) -> dict:
     """Descarga el video con yt-dlp y devuelve nombre de archivo y metadatos."""
+    limpiar_viejos()
     nombre = f"{uuid.uuid4().hex}.mp4"
     opciones = {
         "outtmpl": str(DESCARGAS / nombre),
@@ -133,4 +143,4 @@ def borrar(archivo):
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=False)
+    app.run(host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", 5000)), debug=False)

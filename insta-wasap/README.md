@@ -10,7 +10,17 @@ App web que **descarga videos de Instagram** (reels, posts, IGTV) y los **sube a
    - **Si no se puede publicar directo** (navegador sin compartir, error de la API o video de más de 16 MB), el video se descarga automáticamente para subirlo a mano desde la galería.
    - **Enviar por WhatsApp API** (opcional): lo manda directo a un número usando la API oficial de WhatsApp Cloud (Meta).
 
-## Instalación
+## 📱 En el celular (Android) — lo más fácil
+1. Instalá **Termux** desde F-Droid (https://f-droid.org/packages/com.termux/). La versión de Play Store está desactualizada.
+2. Abrí Termux, pegá esto y apretá Enter:
+```bash
+curl -fsSL https://raw.githubusercontent.com/ramireznicolasdaniel-pixel/skills-introduction-to-github/ccr-45ecf061-x7g29h/insta-wasap/termux.sh | bash
+```
+3. Se abre el navegador con la app. Las próximas veces solo escribí `instawasap` en Termux.
+
+Dejá Termux abierto mientras usás la app. El botón **Compartir en WhatsApp** te deja elegir un chat o tu estado.
+
+## Instalación en PC
 Necesitás Python 3.10+ y `ffmpeg`.
 
 ```bash
@@ -18,7 +28,7 @@ cd insta-wasap
 pip install -r requirements.txt
 python app.py
 ```
-Abrí http://localhost:5000 (desde el celular en la misma red: `http://IP-de-tu-PC:5000`).
+Abrí http://localhost:5000 (para abrirla desde otro dispositivo de la misma red: `HOST=0.0.0.0 python app.py` y entrá a `http://IP-de-tu-PC:5000`).
 
 > El botón "Compartir" con archivo en el celular requiere HTTPS (o localhost). Para usarlo desde el teléfono, publicala con HTTPS (Render, Railway, un túnel como `cloudflared`, etc.).
 
