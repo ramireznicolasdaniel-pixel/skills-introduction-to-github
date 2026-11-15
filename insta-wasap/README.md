@@ -8,6 +8,7 @@ App web que **descarga videos de Instagram** (reels, posts, IGTV) y los **sube a
    - **Compartir en WhatsApp**: en el celular abre el menú de compartir con el archivo → elegís un chat o tu **estado**. En PC lo guarda y abre WhatsApp Web.
    - **Guardar en el dispositivo**.
    - **Achicar a menos de 16 MB**: si el video es muy pesado para WhatsApp, lo recomprime con ffmpeg para poder publicarlo.
+   - **Hacer sticker**: elegís el momento del video, animado (hasta 10 s) o estático, recortado al centro o cuadro completo con fondo transparente. Sale en el formato de WhatsApp (WebP 512×512, < 500 KB animado / < 100 KB estático) y lo compartís directo; si no se puede, se descarga.
    - **Si no se puede publicar directo** (navegador sin compartir, error de la API o video de más de 16 MB), el video se descarga automáticamente para subirlo a mano desde la galería.
    - **Enviar por WhatsApp API** (opcional): lo manda directo a un número usando la API oficial de WhatsApp Cloud (Meta).
 
@@ -55,8 +56,12 @@ export INSTAGRAM_COOKIES=/ruta/cookies.txt
 ## Links aceptados
 Reels, posts, IGTV, links `instagram.com/share/...`, con `?igsh=` y texto pegado que contenga el link. En posts con varios videos baja el primero.
 
+## Stickers: cómo agregarlos si no se envían directo
+Si al compartir WhatsApp lo manda como imagen, o se descargó el archivo: en un chat tocá el ícono de **stickers** → **+ / Crear** y elegí el `sticker.webp` de la galería o Descargas.
+
 ## Pruebas
 ```bash
+pip install pillow   # solo para las pruebas
 python -m unittest discover -v tests
 ```
 

@@ -29,7 +29,7 @@
   .ig { background:var(--ig); }
   .wa { background:var(--wa); }
   .wa2 { background:var(--wa-osc); }
-  .gris { background:transparent; color:var(--txt); border:1px solid var(--borde); }
+  .gris, a.btn.gris { background:transparent; color:var(--txt); border:1px solid var(--borde); }
   video { width:100%; max-height:60vh; border-radius:10px; background:#000; }
   .meta { font-size:.85rem; color:var(--sub); margin:8px 0 0; overflow-wrap:anywhere; }
   .msg { padding:10px 12px; border-radius:10px; margin-top:10px; font-size:.9rem; }
@@ -37,6 +37,17 @@
   .msg.ok { background:color-mix(in srgb, var(--wa) 15%, transparent); color:var(--wa-osc); }
   .oculto { display:none; }
   .fila { display:flex; gap:10px; } .fila > * { flex:1; }
+  h2 { font-size:1.1rem; margin:0 0 12px; }
+  .opciones { display:flex; gap:8px; margin-bottom:12px; }
+  .opciones label { flex:1; margin:0; padding:10px; border:1px solid var(--borde); border-radius:10px;
+                    text-align:center; color:var(--txt); cursor:pointer; font-size:.9rem; }
+  .opciones input { display:none; }
+  .opciones label:has(input:checked) { border-color:var(--wa); background:color-mix(in srgb, var(--wa) 12%, transparent); font-weight:600; }
+  input[type=range] { padding:0; accent-color:var(--wa); }
+  .valor { font-weight:600; color:var(--txt); }
+  .tablero { display:flex; justify-content:center; padding:12px; border-radius:10px; margin-top:10px;
+             background:repeating-conic-gradient(#ccc 0 25%, #fff 0 50%) 0 0/20px 20px; }
+  .tablero img { width:200px; height:200px; }
   footer { font-size:.75rem; color:var(--sub); text-align:center; }
 </style>
 </head>
@@ -73,6 +84,33 @@
     <button class="wa2" id="enviar" type="button">Enviar por WhatsApp API</button>
     {% endif %}
     <div id="msg2"></div>
+  </div>
+
+  <div class="card oculto" id="cardSticker">
+    <h2>Hacer sticker para WhatsApp</h2>
+    <div class="opciones">
+      <label><input type="radio" name="tipo" value="animado" checked> Animado</label>
+      <label><input type="radio" name="tipo" value="estatico"> Estático</label>
+    </div>
+    <div class="opciones">
+      <label><input type="radio" name="recorte" value="cuadrado" checked> Recortar al centro</label>
+      <label><input type="radio" name="recorte" value="completo"> Cuadro completo</label>
+    </div>
+    <label for="inicio">Desde el segundo: <span class="valor" id="inicioTxt">0.0</span></label>
+    <input id="inicio" type="range" min="0" max="0" step="0.1" value="0">
+    <button class="gris" id="usarActual" type="button">Usar el momento que estoy viendo</button>
+    <div id="filaDur">
+      <label for="dur" style="margin-top:12px">Duración: <span class="valor" id="durTxt">3</span> s (máx. 10)</label>
+      <input id="dur" type="range" min="1" max="10" step="0.5" value="3">
+    </div>
+    <button class="ig" id="crearSticker" type="button">Crear sticker</button>
+    <div id="resSticker" class="oculto">
+      <div class="tablero"><img id="imgSticker" alt="Vista previa del sticker"></div>
+      <p class="meta" id="metaSticker"></p>
+      <button class="wa" id="compartirSticker" type="button">Compartir sticker en WhatsApp</button>
+      <a class="btn gris" id="guardarSticker" href="#">Guardar sticker</a>
+    </div>
+    <div id="msg3"></div>
   </div>
 
   <footer>Usalo solo con videos propios o con permiso del autor.</footer>
@@ -124,6 +162,8 @@ $("descargar").onclick = async () => {
     cargarVideo(d);
     if ($("texto")) $("texto").value = d.titulo;
     $("resultado").classList.remove("oculto");
+    $("cardSticker").classList.remove("oculto");
+    $("resSticker").classList.add("oculto"); mostrar("msg3", "");
     $("resultado").scrollIntoView({ behavior: "smooth" });
     if (d.supera_limite) descargarLocal(`Pesa ${d.mb} MB y WhatsApp acepta hasta 16 MB, así que no se puede publicar directo. Podés tocar "Achicar" para publicarlo.`);
   } catch (e) {
@@ -185,6 +225,70 @@ $("comprimir").onclick = async () => {
 // Si se abre con ?url=... (por ejemplo al compartir desde Instagram a Termux), descarga sola.
 const linkInicial = new URLSearchParams(location.search).get("url");
 if (linkInicial) { $("url").value = linkInicial; history.replaceState(null, "", "/"); $("descargar").click(); }
+
+// ---------- Stickers ----------
+let stickerActual = null;
+const elegido = n => document.querySelector(`input[name=${n}]:checked`).value;
+$("player").addEventListener("loadedmetadata", () => {
+  $("inicio").max = Math.max(0, $("player").duration - 0.5).toFixed(1);
+  if (+$("inicio").value > +$("inicio").max) $("inicio").value = 0;
+  $("inicioTxt").textContent = (+$("inicio").value).toFixed(1);
+});
+$("inicio").oninput = () => {
+  $("inicioTxt").textContent = (+$("inicio").value).toFixed(1);
+  $("player").currentTime = +$("inicio").value;  // muestra ese momento en el video
+};
+$("dur").oninput = () => $("durTxt").textContent = $("dur").value;
+$("usarActual").onclick = () => {
+  $("inicio").value = $("player").currentTime.toFixed(1);
+  $("inicioTxt").textContent = (+$("inicio").value).toFixed(1);
+};
+document.querySelectorAll("input[name=tipo]").forEach(r => r.onchange = () =>
+  $("filaDur").classList.toggle("oculto", elegido("tipo") === "estatico"));
+
+$("crearSticker").onclick = async () => {
+  if (!actual) return;
+  const b = $("crearSticker"); b.disabled = true; b.textContent = "Creando sticker…";
+  mostrar("msg3", "");
+  try {
+    const r = await fetch("/api/sticker", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archivo: actual.archivo, inicio: +$("inicio").value, segundos: +$("dur").value,
+                             animado: elegido("tipo") === "animado", recorte: elegido("recorte") }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    stickerActual = d;
+    $("imgSticker").src = `/sticker/${d.sticker}`;
+    $("guardarSticker").href = `/sticker/${d.sticker}?dl=1`;
+    $("metaSticker").textContent = `${d.animado ? "Animado" : "Estático"} · 512×512 · ${d.kb} KB` +
+      (d.supera_limite ? " — pesa más de lo que acepta WhatsApp, probá con menos duración." : " — listo para WhatsApp");
+    $("resSticker").classList.remove("oculto");
+    $("resSticker").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (e) { mostrar("msg3", e.message); }
+  finally { b.disabled = false; b.textContent = "Crear sticker"; }
+};
+
+function guardarStickerLocal(motivo) {
+  const a = document.createElement("a");
+  a.href = `/sticker/${stickerActual.sticker}?dl=1`; a.download = "sticker.webp";
+  document.body.appendChild(a); a.click(); a.remove();
+  mostrar("msg3", `${motivo} El sticker se descargó: en WhatsApp abrí un chat, tocá el ícono de stickers > "+" (o "Crear") y elegilo desde la galería/archivos.`, "ok");
+}
+
+$("compartirSticker").onclick = async () => {
+  if (!stickerActual) return;
+  const b = $("compartirSticker"); b.disabled = true;
+  try {
+    const blob = await (await fetch(`/sticker/${stickerActual.sticker}`)).blob();
+    const file = new File([blob], "sticker.webp", { type: "image/webp" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file] });  // WhatsApp lo envía como sticker
+    } else {
+      guardarStickerLocal("Este navegador no permite compartir directo.");
+    }
+  } catch (e) {
+    if (e.name !== "AbortError") guardarStickerLocal("No se pudo compartir directo.");
+  } finally { b.disabled = false; }
+};
 
 $("url").addEventListener("keydown", e => { if (e.key === "Enter") $("descargar").click(); });
 </script>

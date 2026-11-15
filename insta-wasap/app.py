@@ -28,6 +28,12 @@ IG_EN_TEXTO = re.compile(
 )
 MB_OBJETIVO = 15  # tamaño al que se comprime para entrar en WhatsApp con margen
 ID_OK = re.compile(r"^[0-9a-f]{32}\.mp4$")
+STICKER_OK = re.compile(r"^[0-9a-f]{32}\.webp$")
+# Requisitos de WhatsApp para stickers
+STICKER_LADO = 512
+STICKER_MAX_KB_ANIMADO = 500
+STICKER_MAX_KB_ESTATICO = 100
+STICKER_MAX_SEG = 10
 MAX_MB_WHATSAPP = 16  # límite de video de WhatsApp
 
 app = Flask(__name__)
@@ -87,6 +93,51 @@ def comprimir(origen: Path, mb_objetivo: float = MB_OBJETIVO) -> Path:
          "-c:a", "aac", "-b:a", f"{audio_kbps}k", "-movflags", "+faststart", str(destino)],
         check=True, capture_output=True,
     )
+    return destino
+
+
+def hacer_sticker(origen: Path, inicio: float = 0, segundos: float = 3,
+                  animado: bool = True, recorte: str = "cuadrado") -> Path:
+    """Convierte un tramo del video en sticker WebP de 512x512 que cumple los límites de WhatsApp.
+
+    recorte="cuadrado" recorta el centro; "completo" muestra todo el cuadro con fondo transparente.
+    Si queda muy pesado, baja calidad, fps y tamaño hasta entrar en el límite.
+    """
+    total = duracion(origen)
+    inicio = min(max(float(inicio), 0.0), max(total - 0.1, 0.0))
+    segundos = min(max(float(segundos), 0.5), STICKER_MAX_SEG, total - inicio)
+    lado = STICKER_LADO
+    if recorte == "completo":
+        ajuste = (f"scale={lado}:{lado}:force_original_aspect_ratio=decrease,format=rgba,"
+                  f"pad={lado}:{lado}:(ow-iw)/2:(oh-ih)/2:color=0x00000000")
+    else:
+        ajuste = f"scale={lado}:{lado}:force_original_aspect_ratio=increase,crop={lado}:{lado}"
+    destino = DESCARGAS / f"{uuid.uuid4().hex}.webp"
+    max_kb = STICKER_MAX_KB_ANIMADO if animado else STICKER_MAX_KB_ESTATICO
+
+    # Intentos de más calidad a menos calidad: (calidad, fps). Si el resultado se pasa
+    # mucho del límite, salta intentos para no perder tiempo (importante en el celular).
+    intentos = [(70, 15), (50, 12), (35, 10), (20, 8), (8, 6)] if animado \
+        else [(85, 0), (65, 0), (45, 0), (25, 0), (10, 0)]
+    i = 0
+    while i < len(intentos):
+        calidad, fps = intentos[i]
+        filtros = f"fps={fps},{ajuste}" if animado else ajuste
+        cmd = ["ffmpeg", "-y", "-v", "error", "-ss", f"{inicio:.2f}", "-i", str(origen), "-an"]
+        if animado:
+            cmd += ["-t", f"{segundos:.2f}", "-vf", filtros, "-c:v", "libwebp_anim",
+                    "-loop", "0", "-q:v", str(calidad), "-compression_level", "4"]
+        else:
+            cmd += ["-frames:v", "1", "-vf", filtros, "-c:v", "libwebp", "-q:v", str(calidad)]
+        subprocess.run(cmd + [str(destino)], check=True, capture_output=True)
+        exceso = destino.stat().st_size / (max_kb * 1024)
+        if exceso <= 1:
+            return destino
+        i += 1 if exceso < 1.6 else 2 if exceso < 3 else 3
+    # Último recurso para animados: acortar a la mitad
+    if animado and segundos > 1:
+        destino.unlink(missing_ok=True)
+        return hacer_sticker(origen, inicio, segundos / 2, animado, recorte)
     return destino
 
 
@@ -188,6 +239,37 @@ def api_comprimir():
         return jsonify(error="No se pudo comprimir el video (¿está instalado ffmpeg?)."), 500
     mb = mb_de(nuevo)
     return jsonify(archivo=nuevo.name, mb=mb, supera_limite=mb > MAX_MB_WHATSAPP)
+
+
+@app.post("/api/sticker")
+def api_sticker():
+    datos = request.get_json(silent=True) or {}
+    archivo = datos.get("archivo", "")
+    if not ID_OK.match(archivo) or not (DESCARGAS / archivo).exists():
+        return jsonify(error="Video no encontrado. Descargalo de nuevo."), 404
+    try:
+        inicio = float(datos.get("inicio", 0))
+        segundos = float(datos.get("segundos", 3))
+    except (TypeError, ValueError):
+        return jsonify(error="Inicio y duración tienen que ser números."), 400
+    animado = bool(datos.get("animado", True))
+    recorte = "completo" if datos.get("recorte") == "completo" else "cuadrado"
+    try:
+        st = hacer_sticker(DESCARGAS / archivo, inicio, segundos, animado, recorte)
+    except (subprocess.CalledProcessError, ValueError, FileNotFoundError):
+        return jsonify(error="No se pudo crear el sticker (¿ffmpeg tiene soporte WebP?)."), 500
+    kb = round(st.stat().st_size / 1024)
+    limite = STICKER_MAX_KB_ANIMADO if animado else STICKER_MAX_KB_ESTATICO
+    return jsonify(sticker=st.name, kb=kb, supera_limite=kb > limite, animado=animado)
+
+
+@app.get("/sticker/<archivo>")
+def sticker(archivo):
+    if not STICKER_OK.match(archivo):
+        abort(404)
+    return send_from_directory(DESCARGAS, archivo, mimetype="image/webp",
+                               as_attachment=request.args.get("dl") == "1",
+                               download_name="sticker.webp")
 
 
 @app.get("/video/<archivo>")

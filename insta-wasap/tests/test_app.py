@@ -52,6 +52,56 @@ class TestComprimir(unittest.TestCase):
             grande.unlink(missing_ok=True)
 
 
+@unittest.skipUnless(HAY_FFMPEG, "falta ffmpeg")
+class TestSticker(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.video = app.DESCARGAS / ("b" * 32 + ".mp4")
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=1080x1920:d=12:r=30",
+                        "-c:v", "libx264", "-preset", "ultrafast", str(cls.video)], check=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.video.unlink(missing_ok=True)
+
+    def revisar(self, ruta, max_kb, animado):
+        from PIL import Image
+        with Image.open(ruta) as im:
+            self.assertEqual(im.size, (512, 512))
+            self.assertEqual(getattr(im, "is_animated", False), animado)
+        self.assertLessEqual(ruta.stat().st_size, max_kb * 1024)
+        ruta.unlink()
+
+    def test_animado_cuadrado_10s(self):
+        self.revisar(app.hacer_sticker(self.video, 1, 10, True, "cuadrado"), 500, True)
+
+    def test_animado_completo_transparente(self):
+        st = app.hacer_sticker(self.video, 0, 3, True, "completo")
+        from PIL import Image
+        with Image.open(st) as im:
+            self.assertEqual(im.convert("RGBA").getpixel((0, 0))[3], 0)  # esquina transparente
+        self.revisar(st, 500, True)
+
+    def test_estatico(self):
+        self.revisar(app.hacer_sticker(self.video, 5, 1, False, "cuadrado"), 100, False)
+
+    def test_limites_fuera_de_rango(self):
+        # inicio pasado el final y duración enorme no deben romper
+        self.revisar(app.hacer_sticker(self.video, 999, 60, True, "cuadrado"), 500, True)
+
+    def test_api_sticker(self):
+        c = app.app.test_client()
+        r = c.post("/api/sticker", json={"archivo": self.video.name, "inicio": 2, "segundos": 3})
+        self.assertEqual(r.status_code, 200, r.json)
+        self.assertFalse(r.json["supera_limite"])
+        g = c.get(f"/sticker/{r.json['sticker']}")
+        self.assertEqual(g.mimetype, "image/webp")
+        g.close()
+        (app.DESCARGAS / r.json["sticker"]).unlink()
+        self.assertEqual(c.get("/sticker/..%2Fapp.py").status_code, 404)
+        self.assertEqual(c.post("/api/sticker", json={"archivo": self.video.name, "inicio": "x"}).status_code, 400)
+
+
 class TestAPI(unittest.TestCase):
     def setUp(self):
         self.c = app.app.test_client()
