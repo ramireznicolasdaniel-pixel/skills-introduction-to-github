@@ -7,6 +7,7 @@ App web que **descarga videos de Instagram** (reels, posts, IGTV) y los **sube a
 2. Ves el video y elegís:
    - **Compartir en WhatsApp**: en el celular abre el menú de compartir con el archivo → elegís un chat o tu **estado**. En PC lo guarda y abre WhatsApp Web.
    - **Guardar en el dispositivo**.
+   - **Achicar a menos de 16 MB**: si el video es muy pesado para WhatsApp, lo recomprime con ffmpeg para poder publicarlo.
    - **Si no se puede publicar directo** (navegador sin compartir, error de la API o video de más de 16 MB), el video se descarga automáticamente para subirlo a mano desde la galería.
    - **Enviar por WhatsApp API** (opcional): lo manda directo a un número usando la API oficial de WhatsApp Cloud (Meta).
 
@@ -17,6 +18,8 @@ App web que **descarga videos de Instagram** (reels, posts, IGTV) y los **sube a
 curl -fsSL https://raw.githubusercontent.com/ramireznicolasdaniel-pixel/skills-introduction-to-github/ccr-45ecf061-x7g29h/insta-wasap/termux.sh | bash
 ```
 3. Se abre el navegador con la app. Las próximas veces solo escribí `instawasap` en Termux.
+
+**Atajo:** en Instagram tocá **Compartir** en un reel → **Termux**, y la app se abre con la descarga ya andando.
 
 Dejá Termux abierto mientras usás la app. El botón **Compartir en WhatsApp** te deja elegir un chat o tu estado.
 
@@ -47,6 +50,14 @@ Notas: el número destino debe estar autorizado (en modo prueba) o haberte escri
 Exportá las cookies de Instagram de tu navegador (formato Netscape, por ejemplo con la extensión "Get cookies.txt") y:
 ```bash
 export INSTAGRAM_COOKIES=/ruta/cookies.txt
+```
+
+## Links aceptados
+Reels, posts, IGTV, links `instagram.com/share/...`, con `?igsh=` y texto pegado que contenga el link. En posts con varios videos baja el primero.
+
+## Pruebas
+```bash
+python -m unittest discover -v tests
 ```
 
 ## Uso responsable

@@ -59,6 +59,7 @@
     <video id="player" controls playsinline></video>
     <p class="meta" id="meta"></p>
     <div id="aviso"></div>
+    <button class="ig oculto" id="comprimir" type="button">Achicar a menos de 16 MB para WhatsApp</button>
 
     <button class="wa" id="compartir" type="button">Compartir en WhatsApp</button>
     <a class="btn gris" id="guardar" href="#">Guardar en el dispositivo</a>
@@ -86,6 +87,14 @@ function mostrar(dest, texto, tipo = "err") {
   if (texto) $(dest).firstChild.textContent = texto;
 }
 
+function cargarVideo(d) {
+  actual = { ...actual, ...d };
+  $("player").src = `/video/${d.archivo}`;
+  $("guardar").href = `/video/${d.archivo}?dl=1`;
+  $("meta").textContent = `${actual.autor ? "@" + actual.autor + " · " : ""}${d.mb} MB — ${actual.titulo}`;
+  $("comprimir").classList.toggle("oculto", !d.supera_limite);
+}
+
 // Plan B: si no se puede publicar en WhatsApp, el video se descarga al dispositivo.
 function descargarLocal(motivo) {
   if (!actual) return;
@@ -105,21 +114,18 @@ $("descargar").onclick = async () => {
   const url = $("url").value.trim();
   mostrar("msg1", ""); mostrar("msg2", "");
   if (!url) return mostrar("msg1", "Pegá un link primero.");
+  actual = null;
   const b = $("descargar"); b.disabled = true; b.textContent = "Descargando…";
   try {
     const r = await fetch("/api/descargar", { method: "POST",
       headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || "Error desconocido");
-    actual = d;
-    $("player").src = `/video/${d.archivo}`;
-    $("guardar").href = `/video/${d.archivo}?dl=1`;
-    $("meta").textContent = `${d.autor ? "@" + d.autor + " · " : ""}${d.mb} MB — ${d.titulo}`;
+    cargarVideo(d);
     if ($("texto")) $("texto").value = d.titulo;
-    mostrar("aviso", "");
     $("resultado").classList.remove("oculto");
-    if (d.supera_limite) descargarLocal(`Pesa ${d.mb} MB y WhatsApp acepta hasta 16 MB, así que no se puede publicar directo.`);
     $("resultado").scrollIntoView({ behavior: "smooth" });
+    if (d.supera_limite) descargarLocal(`Pesa ${d.mb} MB y WhatsApp acepta hasta 16 MB, así que no se puede publicar directo. Podés tocar "Achicar" para publicarlo.`);
   } catch (e) {
     mostrar("msg1", e.message);
   } finally {
@@ -158,6 +164,27 @@ if ($("enviar")) $("enviar").onclick = async () => {
   } catch (e) { descargarLocal(`No se pudo enviar (${e.message}).`); }
   finally { b.disabled = false; b.textContent = "Enviar por WhatsApp API"; }
 };
+
+$("comprimir").onclick = async () => {
+  if (!actual) return;
+  const b = $("comprimir"); b.disabled = true; b.textContent = "Achicando… (puede tardar un poco)";
+  mostrar("msg2", "");
+  try {
+    const r = await fetch("/api/comprimir", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archivo: actual.archivo }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    cargarVideo(d);
+    mostrar("msg2", d.supera_limite ? `Quedó en ${d.mb} MB, todavía es grande para WhatsApp.`
+                                    : `Listo: ahora pesa ${d.mb} MB. Ya podés tocar "Compartir en WhatsApp".`,
+            d.supera_limite ? "err" : "ok");
+  } catch (e) { mostrar("msg2", e.message); }
+  finally { b.disabled = false; b.textContent = "Achicar a menos de 16 MB para WhatsApp"; }
+};
+
+// Si se abre con ?url=... (por ejemplo al compartir desde Instagram a Termux), descarga sola.
+const linkInicial = new URLSearchParams(location.search).get("url");
+if (linkInicial) { $("url").value = linkInicial; history.replaceState(null, "", "/"); $("descargar").click(); }
 
 $("url").addEventListener("keydown", e => { if (e.key === "Enter") $("descargar").click(); });
 </script>
