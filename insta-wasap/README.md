@@ -8,7 +8,7 @@ App web que **descarga videos de Instagram** (reels, posts, IGTV) y los **sube a
    - **Compartir en WhatsApp**: en el celular abre el menú de compartir con el archivo → elegís un chat o tu **estado**. En PC lo guarda y abre WhatsApp Web.
    - **Guardar en el dispositivo**.
    - **Achicar a menos de 16 MB**: si el video es muy pesado para WhatsApp, lo recomprime con ffmpeg para poder publicarlo.
-   - **Hacer sticker**: elegís el momento del video, animado (hasta 10 s) o estático, recortado al centro o cuadro completo con fondo transparente. Sale en el formato de WhatsApp (WebP 512×512, < 500 KB animado / < 100 KB estático) y lo compartís directo; si no se puede, se descarga.
+   - **Hacer sticker animado**: elegís el momento y la duración (hasta 10 s), recortado al centro o cuadro completo con fondo transparente. Sale en el formato de sticker animado de WhatsApp (WebP animado 512×512, < 500 KB, con los metadatos de paquete que usa WhatsApp) y lo compartís directo, lo enviás por la API como sticker, o se descarga.
    - **Si no se puede publicar directo** (navegador sin compartir, error de la API o video de más de 16 MB), el video se descarga automáticamente para subirlo a mano desde la galería.
    - **Enviar por WhatsApp API** (opcional): lo manda directo a un número usando la API oficial de WhatsApp Cloud (Meta).
 
@@ -56,8 +56,10 @@ export INSTAGRAM_COOKIES=/ruta/cookies.txt
 ## Links aceptados
 Reels, posts, IGTV, links `instagram.com/share/...`, con `?igsh=` y texto pegado que contenga el link. En posts con varios videos baja el primero.
 
-## Stickers: cómo agregarlos si no se envían directo
-Si al compartir WhatsApp lo manda como imagen, o se descargó el archivo: en un chat tocá el ícono de **stickers** → **+ / Crear** y elegí el `sticker.webp` de la galería o Descargas.
+## Stickers: cómo mandarlos para que se vean animados
+- Lo mejor: botón **Compartir sticker en WhatsApp** (o **Enviar sticker por WhatsApp API**, que lo manda como sticker animado sí o sí).
+- Si se descargó: abrí **Archivos/Descargas**, mantené apretado `sticker.webp` → **Compartir** → **WhatsApp**.
+- Evitá "Crear sticker" dentro de WhatsApp con este archivo: puede dejarlo quieto.
 
 ## Pruebas
 ```bash

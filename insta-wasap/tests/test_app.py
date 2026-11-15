@@ -64,30 +64,40 @@ class TestSticker(unittest.TestCase):
     def tearDownClass(cls):
         cls.video.unlink(missing_ok=True)
 
-    def revisar(self, ruta, max_kb, animado):
+    def revisar(self, ruta):
+        """Comprueba los requisitos de WhatsApp para sticker animado."""
         from PIL import Image
         with Image.open(ruta) as im:
             self.assertEqual(im.size, (512, 512))
-            self.assertEqual(getattr(im, "is_animated", False), animado)
-        self.assertLessEqual(ruta.stat().st_size, max_kb * 1024)
+            self.assertTrue(im.is_animated)
+            self.assertGreater(im.n_frames, 5)
+            total_ms = 0
+            for i in range(im.n_frames):
+                im.seek(i)
+                im.load()
+                self.assertGreaterEqual(im.info["duration"], 8)  # WhatsApp: cada cuadro >= 8 ms
+                total_ms += im.info["duration"]
+            self.assertLessEqual(total_ms, 10_000)
+        self.assertLessEqual(ruta.stat().st_size, 500 * 1024)
+        datos = ruta.read_bytes()
+        self.assertEqual(datos[4:8], (len(datos) - 8).to_bytes(4, "little"))  # RIFF íntegro
+        self.assertTrue(datos[20] & 0x08)                                     # bandera EXIF
+        self.assertIn(b'"sticker-pack-name": "InstaWasap"', datos)
         ruta.unlink()
 
-    def test_animado_cuadrado_10s(self):
-        self.revisar(app.hacer_sticker(self.video, 1, 10, True, "cuadrado"), 500, True)
+    def test_cuadrado_10s(self):
+        self.revisar(app.hacer_sticker(self.video, 1, 10, "cuadrado"))
 
-    def test_animado_completo_transparente(self):
-        st = app.hacer_sticker(self.video, 0, 3, True, "completo")
+    def test_completo_transparente(self):
+        st = app.hacer_sticker(self.video, 0, 3, "completo")
         from PIL import Image
         with Image.open(st) as im:
             self.assertEqual(im.convert("RGBA").getpixel((0, 0))[3], 0)  # esquina transparente
-        self.revisar(st, 500, True)
-
-    def test_estatico(self):
-        self.revisar(app.hacer_sticker(self.video, 5, 1, False, "cuadrado"), 100, False)
+        self.revisar(st)
 
     def test_limites_fuera_de_rango(self):
-        # inicio pasado el final y duración enorme no deben romper
-        self.revisar(app.hacer_sticker(self.video, 999, 60, True, "cuadrado"), 500, True)
+        # inicio pasado el final y duración enorme no deben romper ni quedar sin animación
+        self.revisar(app.hacer_sticker(self.video, 999, 60, "cuadrado"))
 
     def test_api_sticker(self):
         c = app.app.test_client()
@@ -97,6 +107,15 @@ class TestSticker(unittest.TestCase):
         g = c.get(f"/sticker/{r.json['sticker']}")
         self.assertEqual(g.mimetype, "image/webp")
         g.close()
+        # Envío por API: se manda como sticker (sin texto) con image/webp
+        with mock.patch.object(app, "WA_TOKEN", "t"), mock.patch.object(app, "WA_PHONE_ID", "1"), \
+                mock.patch.object(app.requests, "post") as post:
+            post.return_value.json.side_effect = [{"id": "m1"}, {"messages": [{"id": "w1"}]}]
+            r2 = c.post("/api/enviar", json={"archivo": r.json["sticker"], "telefono": "5491122334455", "texto": "x"})
+        self.assertEqual(r2.status_code, 200, r2.json)
+        self.assertEqual(post.call_args_list[0].kwargs["data"]["type"], "image/webp")
+        self.assertEqual(post.call_args_list[1].kwargs["json"],
+                         {"messaging_product": "whatsapp", "to": "5491122334455", "type": "sticker", "sticker": {"id": "m1"}})
         (app.DESCARGAS / r.json["sticker"]).unlink()
         self.assertEqual(c.get("/sticker/..%2Fapp.py").status_code, 404)
         self.assertEqual(c.post("/api/sticker", json={"archivo": self.video.name, "inicio": "x"}).status_code, 400)

@@ -87,11 +87,7 @@
   </div>
 
   <div class="card oculto" id="cardSticker">
-    <h2>Hacer sticker para WhatsApp</h2>
-    <div class="opciones">
-      <label><input type="radio" name="tipo" value="animado" checked> Animado</label>
-      <label><input type="radio" name="tipo" value="estatico"> Estático</label>
-    </div>
+    <h2>Hacer sticker animado para WhatsApp</h2>
     <div class="opciones">
       <label><input type="radio" name="recorte" value="cuadrado" checked> Recortar al centro</label>
       <label><input type="radio" name="recorte" value="completo"> Cuadro completo</label>
@@ -99,16 +95,17 @@
     <label for="inicio">Desde el segundo: <span class="valor" id="inicioTxt">0.0</span></label>
     <input id="inicio" type="range" min="0" max="0" step="0.1" value="0">
     <button class="gris" id="usarActual" type="button">Usar el momento que estoy viendo</button>
-    <div id="filaDur">
-      <label for="dur" style="margin-top:12px">Duración: <span class="valor" id="durTxt">3</span> s (máx. 10)</label>
-      <input id="dur" type="range" min="1" max="10" step="0.5" value="3">
-    </div>
-    <button class="ig" id="crearSticker" type="button">Crear sticker</button>
+    <label for="dur" style="margin-top:12px">Duración: <span class="valor" id="durTxt">3</span> s (máx. 10)</label>
+    <input id="dur" type="range" min="1" max="10" step="0.5" value="3">
+    <button class="ig" id="crearSticker" type="button">Crear sticker animado</button>
     <div id="resSticker" class="oculto">
       <div class="tablero"><img id="imgSticker" alt="Vista previa del sticker"></div>
       <p class="meta" id="metaSticker"></p>
       <button class="wa" id="compartirSticker" type="button">Compartir sticker en WhatsApp</button>
       <a class="btn gris" id="guardarSticker" href="#">Guardar sticker</a>
+      {% if api_activa %}
+      <button class="wa2" id="enviarSticker" type="button">Enviar sticker por WhatsApp API (al número de arriba)</button>
+      {% endif %}
     </div>
     <div id="msg3"></div>
   </div>
@@ -243,35 +240,33 @@ $("usarActual").onclick = () => {
   $("inicio").value = $("player").currentTime.toFixed(1);
   $("inicioTxt").textContent = (+$("inicio").value).toFixed(1);
 };
-document.querySelectorAll("input[name=tipo]").forEach(r => r.onchange = () =>
-  $("filaDur").classList.toggle("oculto", elegido("tipo") === "estatico"));
 
 $("crearSticker").onclick = async () => {
   if (!actual) return;
-  const b = $("crearSticker"); b.disabled = true; b.textContent = "Creando sticker…";
+  const b = $("crearSticker"); b.disabled = true; b.textContent = "Creando sticker animado…";
   mostrar("msg3", "");
   try {
     const r = await fetch("/api/sticker", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ archivo: actual.archivo, inicio: +$("inicio").value, segundos: +$("dur").value,
-                             animado: elegido("tipo") === "animado", recorte: elegido("recorte") }) });
+                             recorte: elegido("recorte") }) });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error);
     stickerActual = d;
     $("imgSticker").src = `/sticker/${d.sticker}`;
     $("guardarSticker").href = `/sticker/${d.sticker}?dl=1`;
-    $("metaSticker").textContent = `${d.animado ? "Animado" : "Estático"} · 512×512 · ${d.kb} KB` +
+    $("metaSticker").textContent = `Animado · 512×512 · ${d.kb} KB` +
       (d.supera_limite ? " — pesa más de lo que acepta WhatsApp, probá con menos duración." : " — listo para WhatsApp");
     $("resSticker").classList.remove("oculto");
     $("resSticker").scrollIntoView({ behavior: "smooth", block: "nearest" });
   } catch (e) { mostrar("msg3", e.message); }
-  finally { b.disabled = false; b.textContent = "Crear sticker"; }
+  finally { b.disabled = false; b.textContent = "Crear sticker animado"; }
 };
 
 function guardarStickerLocal(motivo) {
   const a = document.createElement("a");
   a.href = `/sticker/${stickerActual.sticker}?dl=1`; a.download = "sticker.webp";
   document.body.appendChild(a); a.click(); a.remove();
-  mostrar("msg3", `${motivo} El sticker se descargó: en WhatsApp abrí un chat, tocá el ícono de stickers > "+" (o "Crear") y elegilo desde la galería/archivos.`, "ok");
+  mostrar("msg3", `${motivo} El sticker se descargó. Para que llegue animado: abrí la app Archivos (o Descargas), mantené apretado "sticker.webp" > Compartir > WhatsApp. (Si lo agregás con "Crear sticker" dentro de WhatsApp puede quedar quieto.)`, "ok");
 }
 
 $("compartirSticker").onclick = async () => {
@@ -288,6 +283,19 @@ $("compartirSticker").onclick = async () => {
   } catch (e) {
     if (e.name !== "AbortError") guardarStickerLocal("No se pudo compartir directo.");
   } finally { b.disabled = false; }
+};
+
+if ($("enviarSticker")) $("enviarSticker").onclick = async () => {
+  if (!stickerActual) return;
+  const b = $("enviarSticker"); b.disabled = true;
+  try {
+    const r = await fetch("/api/enviar", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archivo: stickerActual.sticker, telefono: $("tel").value }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    mostrar("msg3", "¡Sticker animado enviado por WhatsApp!", "ok");
+  } catch (e) { guardarStickerLocal(`No se pudo enviar (${e.message}).`); }
+  finally { b.disabled = false; }
 };
 
 $("url").addEventListener("keydown", e => { if (e.key === "Enter") $("descargar").click(); });

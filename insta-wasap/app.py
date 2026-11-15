@@ -1,6 +1,8 @@
 """InstaWasap: descarga videos de Instagram y los comparte/envía por WhatsApp."""
+import json
 import os
 import re
+import struct
 import subprocess
 import time
 import uuid
@@ -32,7 +34,6 @@ STICKER_OK = re.compile(r"^[0-9a-f]{32}\.webp$")
 # Requisitos de WhatsApp para stickers
 STICKER_LADO = 512
 STICKER_MAX_KB_ANIMADO = 500
-STICKER_MAX_KB_ESTATICO = 100
 STICKER_MAX_SEG = 10
 MAX_MB_WHATSAPP = 16  # límite de video de WhatsApp
 
@@ -96,16 +97,39 @@ def comprimir(origen: Path, mb_objetivo: float = MB_OBJETIVO) -> Path:
     return destino
 
 
+def agregar_metadatos_sticker(ruta: Path, paquete: str = "InstaWasap", autor: str = "InstaWasap") -> None:
+    """Agrega al WebP el bloque EXIF que WhatsApp usa para reconocer stickers (nombre de paquete y autor).
+
+    Es el mismo formato que usan las apps y bots de stickers. No recomprime la imagen.
+    """
+    datos = bytearray(ruta.read_bytes())
+    if datos[:4] != b"RIFF" or datos[8:12] != b"WEBP" or datos[12:16] != b"VP8X":
+        return  # solo WebP extendido (los animados siempre lo son)
+    info = json.dumps({
+        "sticker-pack-id": f"instawasap.{uuid.uuid4().hex[:12]}",
+        "sticker-pack-name": paquete,
+        "sticker-pack-publisher": autor,
+        "emojis": ["😀"],
+    }, ensure_ascii=False).encode()
+    exif = (b"II*\x00\x08\x00\x00\x00\x01\x00\x41\x57\x07\x00"
+            + struct.pack("<I", len(info)) + b"\x16\x00\x00\x00" + info)
+    trozo = b"EXIF" + struct.pack("<I", len(exif)) + exif + (b"\x00" if len(exif) % 2 else b"")
+    datos[20] |= 0x08                      # marca "tiene EXIF" en el encabezado VP8X
+    datos += trozo
+    datos[4:8] = struct.pack("<I", len(datos) - 8)  # nuevo tamaño total del RIFF
+    ruta.write_bytes(bytes(datos))
+
+
 def hacer_sticker(origen: Path, inicio: float = 0, segundos: float = 3,
-                  animado: bool = True, recorte: str = "cuadrado") -> Path:
-    """Convierte un tramo del video en sticker WebP de 512x512 que cumple los límites de WhatsApp.
+                  recorte: str = "cuadrado") -> Path:
+    """Convierte un tramo del video en sticker ANIMADO WebP 512x512 que cumple los límites de WhatsApp.
 
     recorte="cuadrado" recorta el centro; "completo" muestra todo el cuadro con fondo transparente.
-    Si queda muy pesado, baja calidad, fps y tamaño hasta entrar en el límite.
+    Si queda muy pesado, baja calidad y fps (y como último recurso la duración) hasta entrar en 500 KB.
     """
     total = duracion(origen)
-    inicio = min(max(float(inicio), 0.0), max(total - 0.1, 0.0))
-    segundos = min(max(float(segundos), 0.5), STICKER_MAX_SEG, total - inicio)
+    inicio = min(max(float(inicio), 0.0), max(total - 1.0, 0.0))
+    segundos = max(min(float(segundos), STICKER_MAX_SEG, total - inicio), 0.5)
     lado = STICKER_LADO
     if recorte == "completo":
         ajuste = (f"scale={lado}:{lado}:force_original_aspect_ratio=decrease,format=rgba,"
@@ -113,31 +137,29 @@ def hacer_sticker(origen: Path, inicio: float = 0, segundos: float = 3,
     else:
         ajuste = f"scale={lado}:{lado}:force_original_aspect_ratio=increase,crop={lado}:{lado}"
     destino = DESCARGAS / f"{uuid.uuid4().hex}.webp"
-    max_kb = STICKER_MAX_KB_ANIMADO if animado else STICKER_MAX_KB_ESTATICO
+    limite = (STICKER_MAX_KB_ANIMADO - 2) * 1024  # margen para los metadatos
 
-    # Intentos de más calidad a menos calidad: (calidad, fps). Si el resultado se pasa
-    # mucho del límite, salta intentos para no perder tiempo (importante en el celular).
-    intentos = [(70, 15), (50, 12), (35, 10), (20, 8), (8, 6)] if animado \
-        else [(85, 0), (65, 0), (45, 0), (25, 0), (10, 0)]
+    # Intentos de más calidad a menos: (calidad, fps). Si se pasa mucho del límite,
+    # salta intentos para no perder tiempo (importante en el celular).
+    intentos = [(70, 15), (50, 12), (35, 10), (20, 8), (8, 6)]
     i = 0
     while i < len(intentos):
         calidad, fps = intentos[i]
-        filtros = f"fps={fps},{ajuste}" if animado else ajuste
-        cmd = ["ffmpeg", "-y", "-v", "error", "-ss", f"{inicio:.2f}", "-i", str(origen), "-an"]
-        if animado:
-            cmd += ["-t", f"{segundos:.2f}", "-vf", filtros, "-c:v", "libwebp_anim",
-                    "-loop", "0", "-q:v", str(calidad), "-compression_level", "4"]
-        else:
-            cmd += ["-frames:v", "1", "-vf", filtros, "-c:v", "libwebp", "-q:v", str(calidad)]
-        subprocess.run(cmd + [str(destino)], check=True, capture_output=True)
-        exceso = destino.stat().st_size / (max_kb * 1024)
+        subprocess.run(
+            ["ffmpeg", "-y", "-v", "error", "-ss", f"{inicio:.2f}", "-i", str(origen), "-an",
+             "-t", f"{segundos:.2f}", "-vf", f"fps={fps},{ajuste}", "-c:v", "libwebp_anim",
+             "-loop", "0", "-q:v", str(calidad), "-compression_level", "4", str(destino)],
+            check=True, capture_output=True,
+        )
+        exceso = destino.stat().st_size / limite
         if exceso <= 1:
-            return destino
+            break
         i += 1 if exceso < 1.6 else 2 if exceso < 3 else 3
-    # Último recurso para animados: acortar a la mitad
-    if animado and segundos > 1:
-        destino.unlink(missing_ok=True)
-        return hacer_sticker(origen, inicio, segundos / 2, animado, recorte)
+    else:
+        if segundos > 1:  # último recurso: acortar a la mitad
+            destino.unlink(missing_ok=True)
+            return hacer_sticker(origen, inicio, segundos / 2, recorte)
+    agregar_metadatos_sticker(destino)
     return destino
 
 
@@ -171,26 +193,28 @@ def descargar_instagram(url: str) -> dict:
     }
 
 
-def enviar_whatsapp(ruta: Path, telefono: str, texto: str) -> str:
-    """Sube el video a WhatsApp Cloud API y lo envía a un número. Devuelve el id del mensaje."""
+def enviar_whatsapp(ruta: Path, telefono: str, texto: str = "", tipo: str = "video") -> str:
+    """Sube el archivo a WhatsApp Cloud API y lo envía a un número. Devuelve el id del mensaje.
+
+    tipo="video" manda el MP4; tipo="sticker" manda el WebP como sticker animado.
+    """
+    mime = "image/webp" if tipo == "sticker" else "video/mp4"
     headers = {"Authorization": f"Bearer {WA_TOKEN}"}
     with ruta.open("rb") as f:
         r = requests.post(
             f"{WA_API}/{WA_PHONE_ID}/media",
             headers=headers,
-            data={"messaging_product": "whatsapp", "type": "video/mp4"},
-            files={"file": (ruta.name, f, "video/mp4")},
+            data={"messaging_product": "whatsapp", "type": mime},
+            files={"file": (ruta.name, f, mime)},
             timeout=120,
         )
     r.raise_for_status()
     media_id = r.json()["id"]
 
-    cuerpo = {
-        "messaging_product": "whatsapp",
-        "to": telefono,
-        "type": "video",
-        "video": {"id": media_id, "caption": texto[:1024]},
-    }
+    contenido = {"id": media_id}
+    if tipo == "video" and texto:
+        contenido["caption"] = texto[:1024]  # los stickers no llevan texto
+    cuerpo = {"messaging_product": "whatsapp", "to": telefono, "type": tipo, tipo: contenido}
     r = requests.post(f"{WA_API}/{WA_PHONE_ID}/messages", headers=headers, json=cuerpo, timeout=60)
     r.raise_for_status()
     return r.json()["messages"][0]["id"]
@@ -252,15 +276,13 @@ def api_sticker():
         segundos = float(datos.get("segundos", 3))
     except (TypeError, ValueError):
         return jsonify(error="Inicio y duración tienen que ser números."), 400
-    animado = bool(datos.get("animado", True))
     recorte = "completo" if datos.get("recorte") == "completo" else "cuadrado"
     try:
-        st = hacer_sticker(DESCARGAS / archivo, inicio, segundos, animado, recorte)
+        st = hacer_sticker(DESCARGAS / archivo, inicio, segundos, recorte)
     except (subprocess.CalledProcessError, ValueError, FileNotFoundError):
         return jsonify(error="No se pudo crear el sticker (¿ffmpeg tiene soporte WebP?)."), 500
     kb = round(st.stat().st_size / 1024)
-    limite = STICKER_MAX_KB_ANIMADO if animado else STICKER_MAX_KB_ESTATICO
-    return jsonify(sticker=st.name, kb=kb, supera_limite=kb > limite, animado=animado)
+    return jsonify(sticker=st.name, kb=kb, supera_limite=kb > STICKER_MAX_KB_ANIMADO)
 
 
 @app.get("/sticker/<archivo>")
@@ -288,12 +310,13 @@ def api_enviar():
     datos = request.get_json(silent=True) or {}
     archivo = datos.get("archivo", "")
     telefono = re.sub(r"\D", "", datos.get("telefono", ""))
-    if not ID_OK.match(archivo) or not (DESCARGAS / archivo).exists():
-        return jsonify(error="Video no encontrado. Descargalo de nuevo."), 404
+    tipo = "sticker" if STICKER_OK.match(archivo) else "video"
+    if not (ID_OK.match(archivo) or tipo == "sticker") or not (DESCARGAS / archivo).exists():
+        return jsonify(error="Archivo no encontrado. Descargalo de nuevo."), 404
     if len(telefono) < 8:
         return jsonify(error="Número inválido. Usá formato internacional, ej: 5491122334455."), 400
     try:
-        msg_id = enviar_whatsapp(DESCARGAS / archivo, telefono, datos.get("texto", ""))
+        msg_id = enviar_whatsapp(DESCARGAS / archivo, telefono, datos.get("texto", ""), tipo)
     except requests.HTTPError as e:
         detalle = e.response.json().get("error", {}).get("message", str(e)) if e.response is not None else str(e)
         return jsonify(error=f"WhatsApp rechazó el envío: {detalle}"), 502
