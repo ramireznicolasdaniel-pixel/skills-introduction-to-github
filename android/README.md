@@ -27,3 +27,37 @@ cd android && ./gradlew assembleRelease
 ```
 
 > La clave de firma (`app/instawasap.jks`, contraseña `instawasap`) está en el repo para que cada versión se pueda instalar encima de la anterior. Si vas a distribuir la app públicamente, cambiala y guardala como *secret* de GitHub (`KEYSTORE_PASSWORD`).
+
+---
+
+# VideoIA 🎬✨ — videos con inteligencia artificial
+
+Segunda app del mismo proyecto (`android/videoia`). Escribís una idea, la IA de Google (**Veo**) genera un video de unos 8 segundos, y después lo **mandás por WhatsApp**, lo **guardás** o lo convertís en **sticker animado**.
+
+## Instalar
+Desde el celular: https://github.com/ramireznicolasdaniel-pixel/skills-introduction-to-github/releases/tag/videoia-ultima
+
+Bajá **`VideoIA-arm64-v8a.apk`**.
+
+## Configurar (una sola vez)
+1. Entrá a **Google AI Studio** (https://aistudio.google.com/apikey) con tu cuenta de Google y tocá **Create API key**.
+2. **Activá la facturación** en esa cuenta. Generar videos con IA no es gratis: Google cobra cada video.
+3. En VideoIA tocá **⚙ Configuración**, pegá la clave y tocá **Guardar clave y buscar modelos**.
+
+La app le pregunta a Google qué modelos de video tiene tu cuenta. Así, si Google da de baja un modelo, la app sigue andando.
+
+## Costo aproximado por video de 8 s
+Precios publicados en noviembre de 2026; Google los puede cambiar:
+
+| Modelo | Aprox. |
+|---|---|
+| Veo Lite | US$ 0,40 |
+| Veo Fast (el que se elige por defecto) | US$ 0,80 |
+| Veo (calidad máxima) | US$ 3,20 |
+
+## Usar
+- Escribí la idea con detalle: quién, qué hace, dónde, estilo y cámara. O tocá una de las ideas de ejemplo.
+- **Vertical** sirve para estados de WhatsApp; **Horizontal** para compartir normal.
+- La IA tarda entre 1 y 3 minutos. Podés salir de la app: al volver, sigue esperando el video.
+- Si la IA rechaza la idea por sus reglas de seguridad, la app te avisa. Pasa, por ejemplo, con personas famosas o con violencia.
+- La clave de API se guarda solo en tu celular.
