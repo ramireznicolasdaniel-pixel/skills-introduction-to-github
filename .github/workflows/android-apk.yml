@@ -1,0 +1,80 @@
+name: Compilar APKs (InstaWasap y VideoIA)
+
+on:
+  push:
+    branches: [ccr-45ecf061-x7g29h, main]
+    paths: ["android/**", ".github/workflows/android-apk.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # para publicar la APK en "Releases"
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Pruebas
+        run: ./gradlew --no-daemon testReleaseUnitTest
+
+      - name: Compilar APK
+        run: ./gradlew --no-daemon :app:assembleRelease :videoia:assembleRelease
+
+      - name: Renombrar
+        run: |
+          mkdir -p salida salida-ia
+          for f in app/build/outputs/apk/release/*.apk; do
+            abi=$(basename "$f" | sed -E 's/app-(.*)-release\.apk/\1/')
+            cp "$f" "salida/InstaWasap-$abi.apk"
+          done
+          for f in videoia/build/outputs/apk/release/*.apk; do
+            abi=$(basename "$f" | sed -E 's/videoia-(.*)-release\.apk/\1/')
+            cp "$f" "salida-ia/VideoIA-$abi.apk"
+          done
+          ls -la salida salida-ia
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: InstaWasap-apk
+          path: |
+            android/salida/*.apk
+            android/salida-ia/*.apk
+
+      - name: Publicar en Releases (link fijo para descargar desde el celular)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-ultima
+          name: InstaWasap (última versión)
+          make_latest: true
+          body: |
+            **¿Cuál bajo?** `InstaWasap-arm64-v8a.apk` sirve para casi todos los celulares actuales.
+            Si no instala, probá `InstaWasap-armeabi-v7a.apk` (celulares viejos).
+
+            Versión ${{ github.run_number }} — commit ${{ github.sha }}
+          files: android/salida/*.apk
+
+      - name: Publicar VideoIA en Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: videoia-ultima
+          name: VideoIA (última versión)
+          make_latest: false
+          body: |
+            App para crear videos con IA (Google Veo) y mandarlos por WhatsApp o hacerlos sticker animado.
+            **¿Cuál bajo?** `VideoIA-arm64-v8a.apk` sirve para casi todos los celulares actuales.
+            Si no instala, probá `VideoIA-armeabi-v7a.apk` (celulares viejos).
+            Necesitás una clave de Google AI Studio con facturación activada (los videos con IA tienen costo).
+
+            Versión ${{ github.run_number }} — commit ${{ github.sha }}
+          files: android/salida-ia/*.apk

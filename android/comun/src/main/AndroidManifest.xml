@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Se suma al manifiesto de cada app: para saber qué editores gratis están instalados -->
+    <queries>
+        <package android:name="com.lemon.lvoverseas" />
+        <package android:name="com.camerasideas.instashot" />
+        <package android:name="com.camerasideas.trimmer" />
+        <package android:name="com.frontrow.vlog" />
+        <intent>
+            <action android:name="android.intent.action.EDIT" />
+            <data android:mimeType="video/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="market" />
+        </intent>
+    </queries>
+</manifest>

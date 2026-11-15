@@ -1,0 +1,920 @@
+package com.instawasap.videoia
+
+import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
+import android.graphics.drawable.AnimatedImageDrawable
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.SystemClock
+import android.view.View
+import android.view.WindowManager
+import android.widget.ArrayAdapter
+import android.widget.ImageView
+import android.widget.MediaController
+import android.widget.TextView
+import android.widget.Toast
+import android.widget.VideoView
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.children
+import androidx.core.view.updatePadding
+import androidx.lifecycle.lifecycleScope
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.button.MaterialButtonToggleGroup
+import com.google.android.material.card.MaterialCardView
+import com.google.android.material.checkbox.MaterialCheckBox
+import com.google.android.material.chip.Chip
+import com.google.android.material.chip.ChipGroup
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.progressindicator.LinearProgressIndicator
+import com.google.android.material.slider.Slider
+import com.google.android.material.textfield.MaterialAutoCompleteTextView
+import com.google.android.material.textfield.TextInputEditText
+import com.instawasap.comun.Compartir
+import com.instawasap.comun.Editores
+import com.instawasap.comun.Procesar
+import com.instawasap.comun.Sticker
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.Locale
+import kotlin.coroutines.resume
+
+class MainActivity : AppCompatActivity() {
+
+    private val prefs by lazy { getSharedPreferences("videoia", Context.MODE_PRIVATE) }
+
+    // Configuración
+    private lateinit var cardConfig: MaterialCardView
+    private lateinit var clave: TextInputEditText
+    private lateinit var modelo: MaterialAutoCompleteTextView
+    private lateinit var estadoConfig: TextView
+
+    // Crear
+    private lateinit var idea: TextInputEditText
+    private lateinit var noQuiero: TextInputEditText
+    private lateinit var grupoFormato: MaterialButtonToggleGroup
+    private lateinit var costo: TextView
+    private lateinit var btnGenerar: MaterialButton
+    private lateinit var btnCancelar: MaterialButton
+    private lateinit var progreso: LinearProgressIndicator
+    private lateinit var estado: TextView
+
+    // Abracadabrax
+    private lateinit var grupoProveedor: MaterialButtonToggleGroup
+    private lateinit var seccionAbx: View
+    private lateinit var seccionGoogle: View
+    private lateinit var modeloAbx: MaterialAutoCompleteTextView
+    private lateinit var durAbx: MaterialAutoCompleteTextView
+    private lateinit var cajaEstilo: View
+    private lateinit var estilo: TextInputEditText
+    private lateinit var escenaTito: MaterialAutoCompleteTextView
+
+    // Punto de partida (imagen o video)
+    private lateinit var grupoPartida: MaterialButtonToggleGroup
+    private lateinit var partidaImagen: View
+    private lateinit var partidaVideo: View
+    private lateinit var imgPartida: ImageView
+    private lateinit var sliderCuadro: Slider
+    private lateinit var txtCuadro: TextView
+    private lateinit var chkUnir: MaterialCheckBox
+    private var imagenPartida: Bitmap? = null
+    private var videoPartida: File? = null
+    private var cuadroPartida: Bitmap? = null
+
+    private val elegirImagen = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri?.let { usarImagen(it) }
+    }
+    private val elegirVideo = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri?.let { usarVideo(it) }
+    }
+
+    // Resultado
+    private lateinit var cardVideo: MaterialCardView
+    private lateinit var video: VideoView
+    private lateinit var meta: TextView
+    private lateinit var btnAchicar: MaterialButton
+    private lateinit var cardSticker: MaterialCardView
+    private lateinit var grupoRecorte: MaterialButtonToggleGroup
+    private lateinit var sliderInicio: Slider
+    private lateinit var sliderDur: Slider
+    private lateinit var txtInicio: TextView
+    private lateinit var txtDur: TextView
+    private lateinit var btnCrearSticker: MaterialButton
+    private lateinit var resSticker: View
+    private lateinit var imgSticker: ImageView
+    private lateinit var metaSticker: TextView
+
+    private var modelos: List<Gemini.Modelo> = emptyList()
+    private var actual: File? = null
+    private var sticker: File? = null
+    private var tarea: Job? = null
+    private var guardadoPendiente: Pair<File, String>? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+        enlazar()
+        ajustarBordes()
+        eventos()
+        cargarConfig()
+        recibirTexto(intent)
+        lifecycleScope.launch(Dispatchers.IO) { runCatching { Procesar.preparar(applicationContext) } }
+        // Si la app se cerró mientras se generaba un video, seguimos esperándolo.
+        prefs.getString("operacion", null)?.let { esperarVideo(it, SystemClock.elapsedRealtime()) }
+        prefs.getString("abx_trabajo", null)?.let { esperarAbx(it, SystemClock.elapsedRealtime()) }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        recibirTexto(intent)
+    }
+
+    private fun enlazar() {
+        cardConfig = findViewById(R.id.cardConfig)
+        clave = findViewById(R.id.clave)
+        modelo = findViewById(R.id.modelo)
+        estadoConfig = findViewById(R.id.estadoConfig)
+        idea = findViewById(R.id.idea)
+        noQuiero = findViewById(R.id.noQuiero)
+        grupoFormato = findViewById(R.id.grupoFormato)
+        costo = findViewById(R.id.costo)
+        btnGenerar = findViewById(R.id.btnGenerar)
+        btnCancelar = findViewById(R.id.btnCancelar)
+        progreso = findViewById(R.id.progreso)
+        estado = findViewById(R.id.estado)
+        grupoProveedor = findViewById(R.id.grupoProveedor)
+        seccionAbx = findViewById(R.id.seccionAbx)
+        seccionGoogle = findViewById(R.id.seccionGoogle)
+        modeloAbx = findViewById(R.id.modeloAbx)
+        durAbx = findViewById(R.id.durAbx)
+        cajaEstilo = findViewById(R.id.cajaEstilo)
+        estilo = findViewById(R.id.estilo)
+        escenaTito = findViewById(R.id.escenaTito)
+        grupoPartida = findViewById(R.id.grupoPartida)
+        partidaImagen = findViewById(R.id.partidaImagen)
+        partidaVideo = findViewById(R.id.partidaVideo)
+        imgPartida = findViewById(R.id.imgPartida)
+        sliderCuadro = findViewById(R.id.sliderCuadro)
+        txtCuadro = findViewById(R.id.txtCuadro)
+        chkUnir = findViewById(R.id.chkUnir)
+        cardVideo = findViewById(R.id.cardVideo)
+        video = findViewById(R.id.video)
+        meta = findViewById(R.id.meta)
+        btnAchicar = findViewById(R.id.btnAchicar)
+        cardSticker = findViewById(R.id.cardSticker)
+        grupoRecorte = findViewById(R.id.grupoRecorte)
+        sliderInicio = findViewById(R.id.sliderInicio)
+        sliderDur = findViewById(R.id.sliderDur)
+        txtInicio = findViewById(R.id.txtInicio)
+        txtDur = findViewById(R.id.txtDur)
+        btnCrearSticker = findViewById(R.id.btnCrearSticker)
+        resSticker = findViewById(R.id.resSticker)
+        imgSticker = findViewById(R.id.imgSticker)
+        metaSticker = findViewById(R.id.metaSticker)
+    }
+
+    private fun ajustarBordes() {
+        val contenido = findViewById<View>(R.id.contenido)
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.raiz)) { _, insets ->
+            val b = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
+            contenido.updatePadding(top = b.top, bottom = b.bottom + (32 * resources.displayMetrics.density).toInt())
+            insets
+        }
+    }
+
+    private fun eventos() {
+        findViewById<MaterialButton>(R.id.btnConfig).setOnClickListener {
+            cardConfig.visibility = if (cardConfig.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        }
+        findViewById<MaterialButton>(R.id.btnConseguirClave).setOnClickListener {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Gemini.URL_CLAVE)))
+        }
+        findViewById<MaterialButton>(R.id.btnGuardarClave).setOnClickListener { guardarClave() }
+        modelo.setOnItemClickListener { _, _, pos, _ ->
+            prefs.edit().putString("modelo", modelos[pos].id).apply()
+            mostrarCosto()
+        }
+        findViewById<ChipGroup>(R.id.ideas).children.forEach { v ->
+            (v as Chip).setOnClickListener { idea.setText(v.text); idea.setSelection(v.text.length) }
+        }
+        btnGenerar.setOnClickListener { generar() }
+        configurarAbx()
+        grupoPartida.addOnButtonCheckedListener { _, _, _ -> mostrarPartida() }
+        findViewById<MaterialButton>(R.id.btnElegirImagen).setOnClickListener {
+            elegirImagen.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+        }
+        findViewById<MaterialButton>(R.id.btnElegirVideo).setOnClickListener {
+            elegirVideo.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
+        }
+        sliderCuadro.addOnChangeListener { _, valor, _ ->
+            txtCuadro.text = String.format(Locale.US, "La IA sigue desde el segundo: %.1f", valor)
+        }
+        sliderCuadro.addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
+            override fun onStartTrackingTouch(slider: Slider) {}
+            override fun onStopTrackingTouch(slider: Slider) = actualizarCuadro()
+        })
+        findViewById<MaterialButton>(R.id.btnEditar).setOnClickListener {
+            actual?.let { f -> Editores.elegir(this, f) }
+        }
+        btnCancelar.setOnClickListener { cancelar() }
+
+        findViewById<MaterialButton>(R.id.btnWhatsApp).setOnClickListener { actual?.let { mandar(it, "video/mp4") } }
+        findViewById<MaterialButton>(R.id.btnGuardar).setOnClickListener { actual?.let { guardar(it, "video/mp4", null) } }
+        findViewById<MaterialButton>(R.id.btnOtraApp).setOnClickListener {
+            actual?.let { Compartir.conOtraApp(this, it, "video/mp4") }
+        }
+        btnAchicar.setOnClickListener { achicar() }
+
+        sliderInicio.addOnChangeListener { _, valor, deUsuario ->
+            txtInicio.text = String.format(Locale.US, "Desde el segundo: %.1f", valor)
+            if (deUsuario) video.seekTo((valor * 1000).toInt())
+        }
+        sliderDur.addOnChangeListener { _, valor, _ ->
+            val t = if (valor % 1f == 0f) valor.toInt().toString() else String.format(Locale.US, "%.1f", valor)
+            txtDur.text = "Duración: $t s (máx. 10)"
+        }
+        findViewById<MaterialButton>(R.id.btnUsarActual).setOnClickListener {
+            sliderInicio.value = (video.currentPosition / 1000f).coerceIn(sliderInicio.valueFrom, sliderInicio.valueTo)
+        }
+        btnCrearSticker.setOnClickListener { crearSticker() }
+        findViewById<MaterialButton>(R.id.btnStickerWhatsApp).setOnClickListener { sticker?.let { mandar(it, "image/webp") } }
+        findViewById<MaterialButton>(R.id.btnStickerGuardar).setOnClickListener { sticker?.let { guardar(it, "image/webp", null) } }
+    }
+
+    /** Algo compartido desde otra app: texto = idea; imagen o video = punto de partida. */
+    private fun recibirTexto(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_SEND) return
+        val tipo = intent.type.orEmpty()
+        @Suppress("DEPRECATION")
+        val uri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+        when {
+            uri != null && tipo.startsWith("image/") -> usarImagen(uri)
+            uri != null && tipo.startsWith("video/") -> usarVideo(uri)
+            else -> intent.getStringExtra(Intent.EXTRA_TEXT)?.let { idea.setText(it.trim()) }
+        }
+        intent.action = null
+    }
+
+    // ---------- Punto de partida ----------
+
+    private fun modoPartida() = when (grupoPartida.checkedButtonId) {
+        R.id.btnDesdeImagen -> "imagen"
+        R.id.btnDesdeVideo -> "video"
+        else -> "texto"
+    }
+
+    private fun mostrarPartida() {
+        val modo = modoPartida()
+        partidaImagen.visibility = if (modo == "imagen") View.VISIBLE else View.GONE
+        partidaVideo.visibility = if (modo == "video") View.VISIBLE else View.GONE
+        val bmp = when (modo) {
+            "imagen" -> imagenPartida
+            "video" -> cuadroPartida
+            else -> null
+        }
+        imgPartida.setImageBitmap(bmp)
+        imgPartida.visibility = if (bmp != null) View.VISIBLE else View.GONE
+    }
+
+    private fun sugerirFormato(bmp: Bitmap) {
+        grupoFormato.check(if (Partida.esHorizontal(bmp)) R.id.btnHorizontal else R.id.btnVertical)
+    }
+
+    private fun usarImagen(uri: Uri) {
+        grupoPartida.check(R.id.btnDesdeImagen)
+        lifecycleScope.launch {
+            try {
+                val bmp = withContext(Dispatchers.IO) { Partida.leerImagen(applicationContext, uri) }
+                imagenPartida = bmp
+                sugerirFormato(bmp)
+                mostrarPartida()
+                estado.text = "Imagen lista. Contá qué querés que pase (opcional) y tocá Generar."
+            } catch (e: Exception) {
+                estado.text = "No se pudo abrir la imagen: ${e.message}"
+            }
+        }
+    }
+
+    private fun usarVideo(uri: Uri) {
+        grupoPartida.check(R.id.btnDesdeVideo)
+        estado.text = "Abriendo el video…"
+        lifecycleScope.launch {
+            try {
+                val f = withContext(Dispatchers.IO) { Partida.copiar(applicationContext, uri, "mp4") }
+                val dur = withContext(Dispatchers.IO) { Partida.duracionSeg(f) }
+                videoPartida = f
+                sliderCuadro.value = 0f
+                sliderCuadro.valueTo = maxOf(dur, 0.1f)
+                sliderCuadro.value = maxOf(dur - 0.05f, 0f) // por defecto: el final, para continuarlo
+                actualizarCuadro()
+                estado.text = "Video listo. Elegí desde qué segundo sigue la IA (por defecto, el final)."
+            } catch (e: Exception) {
+                estado.text = "No se pudo abrir el video: ${e.message}"
+            }
+        }
+    }
+
+    private fun actualizarCuadro() {
+        val f = videoPartida ?: return
+        val seg = sliderCuadro.value
+        lifecycleScope.launch {
+            try {
+                val bmp = withContext(Dispatchers.IO) { Partida.cuadro(f, seg) }
+                cuadroPartida = bmp
+                sugerirFormato(bmp)
+                mostrarPartida()
+            } catch (e: Exception) {
+                estado.text = e.message
+            }
+        }
+    }
+
+    // ---------- Configuración ----------
+
+    private val claveGuardada get() = prefs.getString("clave", "").orEmpty()
+
+    private fun cargarConfig() {
+        grupoProveedor.check(if (esAbx()) R.id.btnProvAbx else R.id.btnProvGoogle)
+        aplicarProveedor()
+        if (esAbx()) {
+            if (prefs.getString("abx_acceso", null) == null) {
+                cardConfig.visibility = View.VISIBLE
+                estado.text = "Conectá tu cuenta de Abracadabrax para empezar (⚙ Configuración)."
+            }
+            return
+        }
+        clave.setText(claveGuardada)
+        if (claveGuardada.isBlank()) {
+            cardConfig.visibility = View.VISIBLE
+            estadoConfig.text = "Primero guardá tu clave de API."
+            estado.text = "Configurá tu clave de Google AI Studio para empezar (⚙ Configuración)."
+        } else {
+            buscarModelos(claveGuardada, silencioso = true)
+        }
+    }
+
+    private fun guardarClave() {
+        val k = clave.text?.toString()?.trim().orEmpty()
+        if (k.isBlank()) { estadoConfig.text = "Pegá tu clave primero."; return }
+        prefs.edit().putString("clave", k).apply()
+        buscarModelos(k, silencioso = false)
+    }
+
+    private fun buscarModelos(k: String, silencioso: Boolean) {
+        estadoConfig.text = "Buscando los modelos de video de tu cuenta…"
+        lifecycleScope.launch {
+            try {
+                modelos = withContext(Dispatchers.IO) { Gemini.listarModelos(k) }
+                if (modelos.isEmpty()) {
+                    estadoConfig.text = "Tu cuenta no tiene modelos de video disponibles. Revisá que la facturación esté activada en Google AI Studio."
+                    cardConfig.visibility = View.VISIBLE
+                    return@launch
+                }
+                modelo.setAdapter(ArrayAdapter(this@MainActivity, android.R.layout.simple_list_item_1, modelos))
+                val elegido = modelos.firstOrNull { it.id == prefs.getString("modelo", null) } ?: modelos.first()
+                prefs.edit().putString("modelo", elegido.id).apply()
+                modelo.setText(elegido.nombre, false)
+                estadoConfig.text = "✓ Clave guardada. ${modelos.size} modelo(s) de video disponibles."
+                if (!silencioso) {
+                    cardConfig.visibility = View.GONE
+                    toast("¡Listo! Ya podés generar videos.")
+                }
+                if (estado.text.startsWith("Configurá")) estado.text = ""
+                mostrarCosto()
+            } catch (e: Exception) {
+                estadoConfig.text = e.message
+                cardConfig.visibility = View.VISIBLE
+            }
+        }
+    }
+
+    private fun modeloElegido(): String? = prefs.getString("modelo", null)
+
+    private fun mostrarCosto() {
+        if (esAbx()) {
+            costo.text = "Abracadabrax te muestra el costo en créditos antes de generar, y vos confirmás."
+            return
+        }
+        val id = modeloElegido() ?: return
+        costo.text = "Cada video dura unos 8 segundos. Costo aprox.:${Gemini.costoTexto(id).removePrefix(" ·")} (lo cobra Google a tu cuenta)."
+    }
+
+    // ---------- Generar ----------
+
+    private fun ocupado(si: Boolean) {
+        if (si) progreso.isIndeterminate = true
+        progreso.visibility = if (si) View.VISIBLE else View.GONE
+        btnGenerar.isEnabled = !si
+        btnCancelar.visibility = if (si) View.VISIBLE else View.GONE
+        btnCrearSticker.isEnabled = !si
+        btnAchicar.isEnabled = !si
+        if (si) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    private fun generar() {
+        if (esAbx()) {
+            generarAbx()
+            return
+        }
+        val k = claveGuardada
+        val m = modeloElegido()
+        val texto = idea.text?.toString()?.trim().orEmpty()
+        when {
+            k.isBlank() || m == null -> {
+                cardConfig.visibility = View.VISIBLE
+                estado.text = "Primero configurá tu clave de API."
+                return
+            }
+            modoPartida() == "texto" && texto.length < 5 -> {
+                estado.text = "Escribí qué video querés (cuanto más detalle, mejor)."; return
+            }
+            modoPartida() == "imagen" && imagenPartida == null -> { estado.text = "Elegí una imagen primero."; return }
+            modoPartida() == "video" && cuadroPartida == null -> { estado.text = "Elegí un video primero."; return }
+        }
+        val bmpPartida = when (modoPartida()) {
+            "imagen" -> imagenPartida
+            "video" -> cuadroPartida
+            else -> null
+        }
+        val unirCon = videoPartida?.takeIf { modoPartida() == "video" && chkUnir.isChecked }
+        val aspecto = if (grupoFormato.checkedButtonId == R.id.btnHorizontal) "16:9" else "9:16"
+        ocupado(true)
+        estado.text = "Enviando tu idea a la IA…"
+        tarea = lifecycleScope.launch {
+            try {
+                val op = withContext(Dispatchers.IO) {
+                    val img = bmpPartida?.let { Partida.paraIA(it) }
+                    Gemini.iniciar(k, m!!, texto, aspecto, noQuiero.text?.toString().orEmpty(), img)
+                }
+                prefs.edit().putString("operacion", op)
+                    .putString("ideaActual", texto.ifBlank { "Animación de tu imagen" })
+                    .putString("unirCon", unirCon?.absolutePath)
+                    .putFloat("unirHasta", sliderCuadro.value)
+                    .apply()
+                esperarVideo(op, SystemClock.elapsedRealtime())
+            } catch (e: Exception) {
+                estado.text = e.message ?: "No se pudo empezar a generar el video."
+                ocupado(false)
+            }
+        }
+    }
+
+    /** Consulta cada 10 s hasta que el video esté listo (suele tardar 1 a 3 minutos). */
+    private fun esperarVideo(operacion: String, desde: Long) {
+        val k = claveGuardada
+        ocupado(true)
+        tarea = lifecycleScope.launch {
+            try {
+                while (isActive) {
+                    val seg = (SystemClock.elapsedRealtime() - desde) / 1000
+                    estado.text = String.format(Locale.US, "Generando video… %d:%02d (suele tardar entre 1 y 3 minutos)", seg / 60, seg % 60)
+                    val e = withContext(Dispatchers.IO) { Gemini.consultar(k, operacion) }
+                    if (e.terminado) {
+                        prefs.edit().remove("operacion").apply()
+                        if (e.error != null) {
+                            estado.text = e.error
+                        } else {
+                            estado.text = "Descargando el video…"
+                            val destino = File(Procesar.carpeta(applicationContext), Procesar.nuevoId() + ".mp4")
+                            withContext(Dispatchers.IO) {
+                                Procesar.limpiarViejos(applicationContext, horas = 24)
+                                Gemini.descargar(k, e.uri!!, destino)
+                            }
+                            val original = prefs.getString("unirCon", null)?.let { File(it) }?.takeIf { it.exists() }
+                            val hasta = prefs.getFloat("unirHasta", 0f)
+                            prefs.edit().remove("unirCon").apply()
+                            if (original != null) {
+                                estado.text = "Uniendo tu video con el de la IA…"
+                                val unido = try {
+                                    withContext(Dispatchers.IO) {
+                                        Procesar.preparar(applicationContext)
+                                        Procesar.unir(applicationContext, original, hasta.toDouble(), destino)
+                                    }
+                                } catch (ex: Exception) {
+                                    null
+                                }
+                                mostrarVideo(unido ?: destino)
+                                estado.text = if (unido != null) "¡Listo! Tu video sigue con lo que generó la IA 🎉"
+                                else "¡Tu video está listo! (No se pudo unir con el original, te muestro solo el de la IA.)"
+                            } else {
+                                mostrarVideo(destino)
+                                estado.text = "¡Tu video está listo! 🎉"
+                            }
+                        }
+                        break
+                    }
+                    if (seg > 15 * 60) {
+                        prefs.edit().remove("operacion").apply()
+                        estado.text = "La IA está tardando demasiado. Probá de nuevo más tarde."
+                        break
+                    }
+                    delay(10_000)
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Error de red mientras esperamos: la operación sigue guardada y se retoma al volver a abrir.
+                estado.text = (e.message ?: "Error") + " (Si cerrás y abrís la app, sigue esperando el video.)"
+            } finally {
+                ocupado(false)
+            }
+        }
+    }
+
+    private fun cancelar() {
+        tarea?.cancel()
+        prefs.edit().remove("operacion").remove("abx_trabajo").apply()
+        estado.text = if (esAbx()) "Dejé de esperar. Si Abracadabrax ya lo estaba generando, lo vas a encontrar en tu cuenta (Abrir mi cuenta)."
+        else "Cancelado. (Si Google ya empezó a generarlo, igual puede cobrarlo.)"
+        ocupado(false)
+    }
+
+    // ---------- Abracadabrax ----------
+
+    private fun esAbx() = prefs.getString("proveedor", "google") == "abx"
+
+    private fun configurarAbx() {
+        grupoProveedor.addOnButtonCheckedListener { _, id, marcado ->
+            if (!marcado) return@addOnButtonCheckedListener
+            prefs.edit().putString("proveedor", if (id == R.id.btnProvAbx) "abx" else "google").apply()
+            aplicarProveedor()
+            if (!esAbx() && modelos.isEmpty() && claveGuardada.isNotBlank()) buscarModelos(claveGuardada, silencioso = true)
+        }
+        findViewById<MaterialButton>(R.id.btnConectarAbx).setOnClickListener { conectarAbx() }
+        findViewById<MaterialButton>(R.id.btnPanelAbx).setOnClickListener {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Abracadabrax.SITIO)))
+        }
+        modeloAbx.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, Abracadabrax.MODELOS))
+        modeloAbx.setOnItemClickListener { _, _, pos, _ ->
+            prefs.edit().putString("abx_modelo", Abracadabrax.MODELOS[pos].id).apply()
+            actualizarDuraciones()
+        }
+        val m = modeloAbxElegido()
+        modeloAbx.setText(m.nombre, false)
+        actualizarDuraciones()
+        durAbx.setOnItemClickListener { _, _, pos, _ ->
+            prefs.edit().putInt("abx_dur", modeloAbxElegido().duraciones[pos]).apply()
+        }
+        estilo.setText(prefs.getString("abx_estilo", Plantillas.ESTILO_INFANTIL))
+
+        // Escenas de Tito y Pancho
+        escenaTito.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, Plantillas.TITO_Y_PANCHO))
+        escenaTito.setOnItemClickListener { _, _, pos, _ ->
+            val e = Plantillas.TITO_Y_PANCHO[pos]
+            grupoPartida.check(R.id.btnSoloTexto)
+            grupoFormato.check(R.id.btnVertical)
+            if (esAbx()) {
+                estilo.setText(Plantillas.ESTILO_INFANTIL)
+                idea.setText(e.texto)
+            } else {
+                idea.setText("${Plantillas.ESTILO_INFANTIL}. ${e.texto}") // Google no tiene campo de estilo
+            }
+            prefs.edit().putString("ideaActual", "Tito y Pancho — ${e.titulo}").apply()
+        }
+        findViewById<MaterialButton>(R.id.btnLetra).setOnClickListener {
+            MaterialAlertDialogBuilder(this)
+                .setTitle("🎵 Los colores con Tito y Pancho")
+                .setMessage(Plantillas.LETRA.replace(" / ", "\n"))
+                .setPositiveButton("Cerrar", null)
+                .show()
+        }
+    }
+
+    private fun modeloAbxElegido(): Abracadabrax.ModeloAbx {
+        val id = prefs.getString("abx_modelo", null)
+        return Abracadabrax.MODELOS.firstOrNull { it.id == id } ?: Abracadabrax.MODELOS.first()
+    }
+
+    private fun duracionAbx(): Int {
+        val m = modeloAbxElegido()
+        val d = prefs.getInt("abx_dur", 0)
+        return if (d in m.duraciones) d else m.duraciones.first()
+    }
+
+    private fun actualizarDuraciones() {
+        val m = modeloAbxElegido()
+        durAbx.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, m.duraciones.map { "$it segundos" }))
+        durAbx.setText("${duracionAbx()} segundos", false)
+    }
+
+    private fun aplicarProveedor() {
+        val abx = esAbx()
+        seccionAbx.visibility = if (abx) View.VISIBLE else View.GONE
+        seccionGoogle.visibility = if (abx) View.GONE else View.VISIBLE
+        cajaEstilo.visibility = if (abx) View.VISIBLE else View.GONE
+        if (abx) {
+            estadoConfig.text = if (prefs.getString("abx_acceso", null) != null) "✓ Cuenta de Abracadabrax conectada."
+            else "Todavía no conectaste tu cuenta de Abracadabrax."
+        }
+        mostrarCosto()
+    }
+
+    /** Inicio de sesión: navegador -> Abracadabrax -> vuelve a 127.0.0.1 en este celular -> token. */
+    private fun conectarAbx() {
+        estadoConfig.text = "Abriendo Abracadabrax en el navegador… Iniciá sesión (o registrate) y aceptá."
+        lifecycleScope.launch {
+            var servidor: java.net.ServerSocket? = null
+            try {
+                servidor = withContext(Dispatchers.IO) { Abracadabrax.abrirServidorLocal() }
+                val redireccion = "http://127.0.0.1:${servidor.localPort}/oauth"
+                val cliente = withContext(Dispatchers.IO) { Abracadabrax.registrar(redireccion) }
+                val pk = Abracadabrax.pkce()
+                val estadoOAuth = Abracadabrax.aleatorio()
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Abracadabrax.urlAutorizar(cliente, redireccion, pk.desafio, estadoOAuth))))
+                val srv = servidor
+                val codigo = withContext(Dispatchers.IO) { Abracadabrax.esperarCodigo(srv, estadoOAuth) }
+                val t = withContext(Dispatchers.IO) { Abracadabrax.canjear(cliente, redireccion, codigo, pk.verificador) }
+                guardarTokens(cliente, t)
+                estadoConfig.text = "✓ Cuenta de Abracadabrax conectada."
+                estado.text = "¡Listo! Ya podés generar videos con Abracadabrax."
+                cardConfig.visibility = View.GONE
+            } catch (e: Exception) {
+                estadoConfig.text = e.message ?: "No se pudo conectar."
+            } finally {
+                runCatching { servidor?.close() }
+            }
+        }
+    }
+
+    private fun guardarTokens(cliente: String, t: Abracadabrax.Tokens) {
+        prefs.edit().putString("abx_cliente", cliente).putString("abx_acceso", t.acceso)
+            .putString("abx_refresco", t.refresco ?: prefs.getString("abx_refresco", null))
+            .putLong("abx_vence", t.venceMs).apply()
+    }
+
+    /** Token vigente (lo renueva si venció). */
+    private suspend fun tokenAbx(forzarRenovar: Boolean = false): String = withContext(Dispatchers.IO) {
+        val acceso = prefs.getString("abx_acceso", null) ?: throw ErrorIA("Primero conectá tu cuenta de Abracadabrax (⚙ Configuración).")
+        val vencido = System.currentTimeMillis() > prefs.getLong("abx_vence", 0)
+        if (!vencido && !forzarRenovar) return@withContext acceso
+        val cliente = prefs.getString("abx_cliente", null)
+        val refresco = prefs.getString("abx_refresco", null)
+        if (cliente == null || refresco == null) throw Abracadabrax.SesionVencida()
+        val t = Abracadabrax.refrescar(cliente, refresco)
+        guardarTokens(cliente, t)
+        t.acceso
+    }
+
+    /** Ejecuta con la cuenta; si la sesión venció, renueva una vez y reintenta. */
+    private suspend fun <T> conCuenta(bloque: (Abracadabrax.Conexion) -> T): T {
+        return try {
+            val c = Abracadabrax.Conexion(tokenAbx())
+            withContext(Dispatchers.IO) { bloque(c) }
+        } catch (e: Abracadabrax.SesionVencida) {
+            val c = Abracadabrax.Conexion(tokenAbx(forzarRenovar = true))
+            withContext(Dispatchers.IO) { bloque(c) }
+        }
+    }
+
+    private suspend fun confirmar(titulo: String, mensaje: String, si: String): Boolean =
+        suspendCancellableCoroutine { cont ->
+            val d = MaterialAlertDialogBuilder(this)
+                .setTitle(titulo)
+                .setMessage(mensaje)
+                .setPositiveButton(si) { _, _ -> if (cont.isActive) cont.resume(true) }
+                .setNegativeButton("Cancelar") { _, _ -> if (cont.isActive) cont.resume(false) }
+                .setOnCancelListener { if (cont.isActive) cont.resume(false) }
+                .show()
+            cont.invokeOnCancellation { d.dismiss() }
+        }
+
+    private fun avisoConPanel(mensaje: String, panel: String?) {
+        val b = MaterialAlertDialogBuilder(this).setTitle("Abracadabrax").setMessage(mensaje).setPositiveButton("Entendido", null)
+        if (panel != null) b.setNeutralButton("Abrir mi cuenta") { _, _ -> startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(panel))) }
+        b.show()
+    }
+
+    private fun generarAbx() {
+        if (prefs.getString("abx_acceso", null) == null) {
+            cardConfig.visibility = View.VISIBLE
+            estado.text = "Primero conectá tu cuenta de Abracadabrax."
+            return
+        }
+        if (modoPartida() != "texto") {
+            estado.text = "Con Abracadabrax por ahora se crea desde texto. Para animar una imagen o seguir un video, elegí Google Veo en Configuración."
+            return
+        }
+        val escena = idea.text?.toString()?.trim().orEmpty()
+        if (escena.length < 5) { estado.text = "Escribí qué pasa en el video (quién, qué hace, dónde, cámara)."; return }
+        val estiloTxt = estilo.text?.toString()?.trim().orEmpty()
+        prefs.edit().putString("abx_estilo", estiloTxt).apply()
+        val formato = if (grupoFormato.checkedButtonId == R.id.btnHorizontal) "landscape" else "vertical"
+        val modelo = modeloAbxElegido()
+        val segundos = duracionAbx()
+        ocupado(true)
+        estado.text = "Preparando el borrador en Abracadabrax (no gasta créditos)…"
+        tarea = lifecycleScope.launch {
+            try {
+                val b = conCuenta { Abracadabrax.preparar(it, escena, estiloTxt, formato, segundos, modelo.id) }
+                Abracadabrax.mensajeEstado(b.estado, b.panel)?.let { avisoConPanel(it, b.panel); estado.text = it; ocupado(false); return@launch }
+                val costoTxt = b.creditos?.let { "Este video cuesta $it créditos." } ?: "Abracadabrax no informó el costo."
+                val saldoTxt = b.saldo?.let { " Te quedan $it créditos." }.orEmpty()
+                val ok = confirmar(
+                    "¿Generar el video?",
+                    "$costoTxt$saldoTxt\n\n${modelo.nombre} · $segundos s · ${if (formato == "vertical") "vertical" else "horizontal"}",
+                    "Sí, generar",
+                )
+                if (!ok) { estado.text = "No se generó nada (no se gastaron créditos)."; ocupado(false); return@launch }
+                estado.text = "Enviando a Abracadabrax…"
+                val t = conCuenta { Abracadabrax.generar(it, b.proyecto) }
+                Abracadabrax.mensajeEstado(t.estado, t.panel ?: b.panel)?.let {
+                    avisoConPanel(it, t.panel ?: b.panel); estado.text = it; ocupado(false); return@launch
+                }
+                val job = t.id ?: throw ErrorIA("Abracadabrax no devolvió el trabajo.")
+                if (prefs.getString("ideaActual", null)?.startsWith("Tito y Pancho") != true) {
+                    prefs.edit().putString("ideaActual", escena.take(120)).apply()
+                }
+                prefs.edit().putString("abx_trabajo", job).apply()
+                esperarAbx(job, SystemClock.elapsedRealtime())
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                estado.text = e.message ?: "No se pudo generar con Abracadabrax."
+                ocupado(false)
+            }
+        }
+    }
+
+    /** Consulta cada 6 s hasta que Abracadabrax termine el video. */
+    private fun esperarAbx(job: String, desde: Long) {
+        ocupado(true)
+        tarea = lifecycleScope.launch {
+            try {
+                while (isActive) {
+                    val seg = (SystemClock.elapsedRealtime() - desde) / 1000
+                    estado.text = String.format(Locale.US, "Abracadabrax está generando el video… %d:%02d", seg / 60, seg % 60)
+                    val t = conCuenta { Abracadabrax.consultar(it, job) }
+                    when (t.estado) {
+                        "completed" -> {
+                            prefs.edit().remove("abx_trabajo").apply()
+                            val url = t.video ?: throw ErrorIA("Abracadabrax terminó pero no mandó el link del video.")
+                            estado.text = "Descargando el video…"
+                            val destino = File(Procesar.carpeta(applicationContext), Procesar.nuevoId() + ".mp4")
+                            val token = tokenAbx()
+                            withContext(Dispatchers.IO) {
+                                Procesar.limpiarViejos(applicationContext, horas = 24)
+                                Abracadabrax.descargar(url, token, destino)
+                            }
+                            mostrarVideo(destino)
+                            estado.text = "¡Tu video está listo! 🎉"
+                            break
+                        }
+                        "failed", "insufficient_credits", "pending_payment", "account_required" -> {
+                            prefs.edit().remove("abx_trabajo").apply()
+                            val msg = (t.error?.let { "Abracadabrax: $it" } ?: Abracadabrax.mensajeEstado(t.estado, t.panel)).orEmpty()
+                            estado.text = msg
+                            avisoConPanel(msg, t.panel)
+                            break
+                        }
+                    }
+                    if (seg > 20 * 60) {
+                        estado.text = "Está tardando mucho. Cuando termine, lo vas a encontrar en tu cuenta de Abracadabrax."
+                        break
+                    }
+                    delay(6_000)
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                estado.text = (e.message ?: "Error") + " (Si cerrás y abrís la app, sigue esperando el video.)"
+            } finally {
+                ocupado(false)
+            }
+        }
+    }
+
+    // ---------- Resultado ----------
+
+    private fun mostrarVideo(f: File) {
+        actual = f
+        sticker = null
+        resSticker.visibility = View.GONE
+        cardVideo.visibility = View.VISIBLE
+        cardSticker.visibility = View.VISIBLE
+        val mb = Procesar.mb(f)
+        meta.text = String.format(Locale.US, "%.1f MB — %s", mb, prefs.getString("ideaActual", "").orEmpty())
+        btnAchicar.visibility = if (mb > Procesar.MAX_MB_WHATSAPP) View.VISIBLE else View.GONE
+        video.setMediaController(MediaController(this).also { it.setAnchorView(video) })
+        video.setVideoPath(f.absolutePath)
+        video.setOnPreparedListener { mp ->
+            mp.isLooping = true
+            sliderInicio.value = 0f
+            sliderInicio.valueTo = maxOf(mp.duration / 1000f - 0.5f, 0.1f)
+            video.start()
+        }
+        cardVideo.post { findViewById<View>(R.id.raiz).scrollTo(0, cardVideo.top) }
+    }
+
+    private fun achicar() {
+        val f = actual ?: return
+        ocupado(true)
+        btnCancelar.visibility = View.GONE
+        estado.text = "Achicando el video…"
+        lifecycleScope.launch {
+            try {
+                val chico = withContext(Dispatchers.IO) { Procesar.comprimir(applicationContext, f) }
+                mostrarVideo(chico)
+                estado.text = String.format(Locale.US, "Listo: ahora pesa %.1f MB.", Procesar.mb(chico))
+            } catch (e: Exception) {
+                estado.text = "No se pudo achicar: ${e.message?.take(200)}"
+            } finally {
+                ocupado(false)
+            }
+        }
+    }
+
+    private fun crearSticker() {
+        val f = actual ?: return
+        val completo = grupoRecorte.checkedButtonId == R.id.btnCompleto
+        ocupado(true)
+        btnCancelar.visibility = View.GONE
+        estado.text = "Creando sticker animado…"
+        lifecycleScope.launch {
+            try {
+                val st = withContext(Dispatchers.IO) {
+                    Procesar.preparar(applicationContext)
+                    Procesar.hacerSticker(applicationContext, f, sliderInicio.value, sliderDur.value, completo)
+                }
+                sticker = st
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    val d = ImageDecoder.decodeDrawable(ImageDecoder.createSource(st))
+                    imgSticker.setImageDrawable(d)
+                    (d as? AnimatedImageDrawable)?.start()
+                } else {
+                    imgSticker.setImageBitmap(BitmapFactory.decodeFile(st.absolutePath))
+                }
+                val kb = st.length() / 1024
+                metaSticker.text = "Animado · 512×512 · $kb KB" +
+                    if (kb > Sticker.MAX_KB) " — muy pesado, probá con menos duración" else " — listo para WhatsApp"
+                resSticker.visibility = View.VISIBLE
+                estado.text = "Sticker animado creado."
+            } catch (e: Exception) {
+                estado.text = "No se pudo crear el sticker: ${e.message?.take(200)}"
+            } finally {
+                ocupado(false)
+            }
+        }
+    }
+
+    private fun mandar(f: File, mime: String) {
+        when {
+            Compartir.whatsappInstalado(this) == null -> guardar(f, mime, "WhatsApp no está instalado.")
+            !Compartir.enWhatsApp(this, f, mime) -> guardar(f, mime, "No se pudo abrir WhatsApp.")
+        }
+    }
+
+    private fun guardar(f: File, mime: String, motivo: String?) {
+        if (Compartir.necesitaPermiso() &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+        ) {
+            guardadoPendiente = f to mime
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 1)
+            return
+        }
+        try {
+            val carpeta = Compartir.guardarEnGaleria(this, f, mime)
+            val que = if (mime.startsWith("video")) "El video" else "El sticker"
+            if (motivo != null) {
+                val extra = if (mime.startsWith("video")) " Subilo a WhatsApp desde la galería."
+                else " Para que llegue animado: abrí Archivos, mantené apretado el sticker > Compartir > WhatsApp."
+                MaterialAlertDialogBuilder(this)
+                    .setTitle("No se pudo publicar directo")
+                    .setMessage("$motivo $que se guardó en $carpeta.$extra")
+                    .setPositiveButton("Entendido", null)
+                    .show()
+            } else {
+                toast("$que se guardó en $carpeta")
+            }
+        } catch (e: Exception) {
+            toast("No se pudo guardar: ${e.message}")
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        val p = guardadoPendiente ?: return
+        guardadoPendiente = null
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) guardar(p.first, p.second, null)
+        else toast("Sin permiso no se puede guardar en la galería")
+    }
+
+    private fun toast(t: String) = Toast.makeText(this, t, Toast.LENGTH_LONG).show()
+}

@@ -1,0 +1,5 @@
+descargas/
+__pycache__/
+.env
+*.txt.cookies
+cookies.txt
